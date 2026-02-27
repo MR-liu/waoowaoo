@@ -17,6 +17,7 @@ import {
 } from './analyze-global-parse'
 import { buildAnalyzeGlobalPrompts, loadAnalyzeGlobalPromptTemplates } from './analyze-global-prompt'
 import { createAnalyzeGlobalStats, persistAnalyzeGlobalChunk } from './analyze-global-persist'
+import { resolveLLMRuntimeOptionsFromPayload } from './llm-runtime-options'
 
 export async function handleAnalyzeGlobalTask(job: Job<TaskJobData>) {
   const projectId = job.data.projectId
@@ -55,6 +56,11 @@ export async function handleAnalyzeGlobalTask(job: Job<TaskJobData>) {
   if (!novelData.analysisModel) {
     throw new Error('请先在项目设置中配置分析模型')
   }
+  const runtimeOptions = resolveLLMRuntimeOptionsFromPayload({
+    payload: job.data.payload,
+    fallbackModel: novelData.analysisModel,
+    defaultTemperature: 0.7,
+  })
 
   let allContent = ''
   if (readText(novelData.globalAssetText).trim()) {
@@ -125,10 +131,12 @@ export async function handleAnalyzeGlobalTask(job: Job<TaskJobData>) {
           await Promise.all([
             chatCompletion(
               job.data.userId,
-              novelData.analysisModel!,
+              runtimeOptions.model,
               [{ role: 'user', content: characterPrompt }],
               {
-                temperature: 0.7,
+                temperature: runtimeOptions.temperature,
+                ...(typeof runtimeOptions.reasoning === 'boolean' ? { reasoning: runtimeOptions.reasoning } : {}),
+                ...(runtimeOptions.reasoningEffort ? { reasoningEffort: runtimeOptions.reasoningEffort } : {}),
                 projectId,
                 action: 'analyze_global_characters',
                 streamStepId: `analyze_global_characters_${i + 1}`,
@@ -139,10 +147,12 @@ export async function handleAnalyzeGlobalTask(job: Job<TaskJobData>) {
             ),
             chatCompletion(
               job.data.userId,
-              novelData.analysisModel!,
+              runtimeOptions.model,
               [{ role: 'user', content: locationPrompt }],
               {
-                temperature: 0.7,
+                temperature: runtimeOptions.temperature,
+                ...(typeof runtimeOptions.reasoning === 'boolean' ? { reasoning: runtimeOptions.reasoning } : {}),
+                ...(runtimeOptions.reasoningEffort ? { reasoningEffort: runtimeOptions.reasoningEffort } : {}),
                 projectId,
                 action: 'analyze_global_locations',
                 streamStepId: `analyze_global_locations_${i + 1}`,

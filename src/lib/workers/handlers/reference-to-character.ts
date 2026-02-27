@@ -153,7 +153,8 @@ export async function handleReferenceToCharacterTask(job: Job<TaskJobData>) {
 
   const userConfig = await getUserModelConfig(job.data.userId)
   const imageModel = readString(userConfig.characterModel)
-  const analysisModel = readString(userConfig.analysisModel)
+  const analysisModelFromPayload = readString(payload.analysisModel)
+  const analysisModel = analysisModelFromPayload || readString(userConfig.analysisModel)
   if (!imageModel && !extractOnly) {
     throw new Error('请先在设置页面配置角色图片模型')
   }

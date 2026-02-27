@@ -18,7 +18,7 @@ export async function handleModifyShotPromptTask(job: Job<TaskJobData>, payload:
   const currentVideoPrompt = readText(payload.currentVideoPrompt)
   const modifyInstruction = readRequiredString(payload.modifyInstruction, 'modifyInstruction')
   const referencedAssets = Array.isArray(payload.referencedAssets) ? payload.referencedAssets : []
-  const novelData = await resolveAnalysisModel(job.data.projectId)
+  const novelData = await resolveAnalysisModel(job.data.projectId, payload.analysisModel)
 
   const assetDescriptions = referencedAssets
     .map((asset) => {

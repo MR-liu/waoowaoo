@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { apiHandler } from '@/lib/api-errors'
+import { NextRequest } from 'next/server'
+import { apiHandler, apiSuccess } from '@/lib/api-errors'
 import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
 import { queryTasks } from '@/lib/task/service'
 import { type TaskStatus } from '@/lib/task/types'
@@ -38,5 +38,5 @@ export const GET = apiHandler(async (request: NextRequest) => {
   const filtered = tasks
     .filter((task) => task.userId === session.user.id)
     .map(withTaskError)
-  return NextResponse.json({ tasks: filtered })
+  return apiSuccess(request, { tasks: filtered }, { flattenData: true })
 })

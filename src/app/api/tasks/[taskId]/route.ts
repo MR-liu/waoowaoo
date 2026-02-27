@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { apiHandler, ApiError } from '@/lib/api-errors'
+import { NextRequest } from 'next/server'
+import { apiHandler, apiSuccess, ApiError } from '@/lib/api-errors'
 import { isErrorResponse, requireUserAuth } from '@/lib/api-auth'
 import { removeTaskJob } from '@/lib/task/queues'
 import { listTaskLifecycleEvents, publishTaskEvent } from '@/lib/task/publisher'
@@ -31,16 +31,16 @@ export const GET = apiHandler(async (
   const eventsLimit = Number.isFinite(eventsLimitRaw) ? Math.min(Math.max(eventsLimitRaw, 1), 5000) : 500
   const events = includeEvents ? await listTaskLifecycleEvents(taskId, eventsLimit) : null
 
-  return NextResponse.json({
+  return apiSuccess(request, {
     task: {
       ...task,
       error: normalizeTaskError(task.errorCode, task.errorMessage)},
     ...(events ? { events } : {}),
-  })
+  }, { flattenData: true })
 })
 
 export const DELETE = apiHandler(async (
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ taskId: string }> },
 ) => {
   const authResult = await requireUserAuth()
@@ -59,8 +59,19 @@ export const DELETE = apiHandler(async (
   }
 
   if (cancelled) {
-    // Best effort: remove queued job to avoid worker picking it up after cancellation.
-    await removeTaskJob(taskId).catch(() => false)
+    let queueCleanupFailed = false
+    let queueCleanupError: string | null = null
+    try {
+      const removed = await removeTaskJob(taskId)
+      queueCleanupFailed = removed !== true
+      if (queueCleanupFailed) {
+        queueCleanupError = 'queue job not found during cancellation cleanup'
+      }
+    } catch (error: unknown) {
+      queueCleanupFailed = true
+      queueCleanupError = error instanceof Error ? error.message : String(error)
+    }
+
     await publishTaskEvent({
       taskId: updatedTask.id,
       projectId: updatedTask.projectId,
@@ -75,14 +86,18 @@ export const DELETE = apiHandler(async (
         stage: 'cancelled',
         stageLabel: '任务已取消',
         cancelled: true,
-        message: updatedTask.errorMessage || 'Task cancelled by user'},
+        message: updatedTask.errorMessage || 'Task cancelled by user',
+        queueCleanupFailed,
+        queueCleanupError,
+      },
       persist: false})
   }
 
-  return NextResponse.json({
+  return apiSuccess(request, {
     success: true,
     cancelled,
     task: {
       ...updatedTask,
-      error: normalizeTaskError(updatedTask.errorCode, updatedTask.errorMessage)}})
+      error: normalizeTaskError(updatedTask.errorCode, updatedTask.errorMessage)},
+  }, { flattenData: true })
 })

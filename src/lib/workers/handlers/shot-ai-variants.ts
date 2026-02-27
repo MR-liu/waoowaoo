@@ -10,6 +10,7 @@ import type { TaskJobData } from '@/lib/task/types'
 import { resolveAnalysisModel } from './shot-ai-persist'
 import type { AnyObj } from './shot-ai-prompt'
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompt-i18n'
+import { resolveLLMRuntimeOptionOverridesFromPayload } from './llm-runtime-options'
 
 function readText(value: unknown): string {
   return typeof value === 'string' ? value : ''
@@ -59,6 +60,11 @@ function parsePanelCharacters(value: string | null): string {
 export async function handleAnalyzeShotVariantsTask(job: Job<TaskJobData>, payload: AnyObj) {
   const panelId = readRequiredString(payload.panelId, 'panelId')
   const novelData = await resolveAnalysisModel(job.data.projectId)
+  const runtimeOptions = resolveLLMRuntimeOptionOverridesFromPayload({
+    payload,
+    fallbackModel: novelData.analysisModel,
+    defaultReasoning: true,
+  })
   const panel = await prisma.novelPromotionPanel.findUnique({
     where: { id: panelId },
     select: {
@@ -108,11 +114,13 @@ export async function handleAnalyzeShotVariantsTask(job: Job<TaskJobData>, paylo
         async () =>
           await chatCompletionWithVision(
             job.data.userId,
-            novelData.analysisModel,
+            runtimeOptions.model,
             prompt,
             [imageUrl],
             {
-              reasoning: true,
+              ...(typeof runtimeOptions.temperature === 'number' ? { temperature: runtimeOptions.temperature } : {}),
+              ...(typeof runtimeOptions.reasoning === 'boolean' ? { reasoning: runtimeOptions.reasoning } : {}),
+              ...(runtimeOptions.reasoningEffort ? { reasoningEffort: runtimeOptions.reasoningEffort } : {}),
               projectId: job.data.projectId,
               action: 'analyze_shot_variants',
               streamStepId: 'analyze_shot_variants',

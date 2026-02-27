@@ -13,6 +13,7 @@ import {
   type VoiceLinePayload,
 } from './voice-analyze-helpers'
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompt-i18n'
+import { resolveLLMRuntimeOptionOverridesFromPayload } from './llm-runtime-options'
 
 const MAX_VOICE_ANALYZE_ATTEMPTS = 2
 
@@ -85,6 +86,10 @@ export async function handleVoiceAnalyzeTask(job: Job<TaskJobData>) {
   if (!analysisModel) {
     throw new Error('analysisModel is not configured')
   }
+  const runtimeOptions = resolveLLMRuntimeOptionOverridesFromPayload({
+    payload: payload,
+    fallbackModel: analysisModel,
+  })
 
   const charactersLibName = novelPromotionData.characters.length > 0
     ? novelPromotionData.characters.map((c) => c.name).join('、')
@@ -141,9 +146,12 @@ export async function handleVoiceAnalyzeTask(job: Job<TaskJobData>) {
           async () =>
             await chatCompletion(
               job.data.userId,
-              analysisModel,
+              runtimeOptions.model,
               [{ role: 'user', content: promptTemplate }],
               {
+                ...(typeof runtimeOptions.temperature === 'number' ? { temperature: runtimeOptions.temperature } : {}),
+                ...(typeof runtimeOptions.reasoning === 'boolean' ? { reasoning: runtimeOptions.reasoning } : {}),
+                ...(runtimeOptions.reasoningEffort ? { reasoningEffort: runtimeOptions.reasoningEffort } : {}),
                 projectId,
                 action: 'voice_analyze',
                 streamStepId: attempt === 1 ? 'voice_analyze' : `voice_analyze_retry_${attempt}`,

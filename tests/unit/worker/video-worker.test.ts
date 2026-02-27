@@ -142,6 +142,20 @@ describe('worker video processor behavior', () => {
     await expect(processor!(job)).rejects.toThrow('VIDEO_MODEL_REQUIRED: payload.videoModel is required')
   })
 
+  it('VIDEO_PANEL: targetType 非 NovelPromotionPanel 时显式失败', async () => {
+    const processor = workerState.processor
+    expect(processor).toBeTruthy()
+
+    const job = buildJob({
+      type: TASK_TYPE.VIDEO_PANEL,
+      targetType: 'NovelPromotionStoryboard',
+      targetId: 'storyboard-1',
+      payload: { videoModel: 'fal::video-model' },
+    })
+
+    await expect(processor!(job)).rejects.toThrow('VIDEO_PANEL_TASK_TARGET_INVALID')
+  })
+
   it('LIP_SYNC: 缺少 panel 时显式失败', async () => {
     const processor = workerState.processor
     expect(processor).toBeTruthy()
@@ -154,6 +168,20 @@ describe('worker video processor behavior', () => {
     })
 
     await expect(processor!(job)).rejects.toThrow('Lip-sync panel not found')
+  })
+
+  it('LIP_SYNC: targetType 非 NovelPromotionPanel 时显式失败', async () => {
+    const processor = workerState.processor
+    expect(processor).toBeTruthy()
+
+    const job = buildJob({
+      type: TASK_TYPE.LIP_SYNC,
+      targetType: 'NovelPromotionStoryboard',
+      targetId: 'storyboard-1',
+      payload: { voiceLineId: 'line-1' },
+    })
+
+    await expect(processor!(job)).rejects.toThrow('LIP_SYNC_TASK_TARGET_INVALID')
   })
 
   it('LIP_SYNC: 正常路径写回 lipSyncVideoUrl 并清理 lipSyncTaskId', async () => {

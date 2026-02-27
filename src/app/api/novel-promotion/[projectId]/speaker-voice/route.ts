@@ -4,11 +4,31 @@ import { getSignedUrl } from '@/lib/cos'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
 import { resolveStorageKeyFromMediaValue } from '@/lib/media/service'
+import { logWarn } from '@/lib/logging/core'
+import { readRequestJsonObject } from '@/lib/request-json'
 
 interface SpeakerVoiceConfig {
   voiceType?: string
   voiceId?: string
   audioUrl: string
+}
+
+function parseSpeakerVoices(
+  raw: string | null | undefined,
+  context: string,
+): Record<string, SpeakerVoiceConfig> {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('speakerVoices must be a JSON object')
+    }
+    return parsed as Record<string, SpeakerVoiceConfig>
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logWarn(`[Speaker Voice] speakerVoices JSON parse failed context=${context} error=${message}`)
+    return {}
+  }
 }
 
 /**
@@ -41,18 +61,13 @@ export const GET = apiHandler(async (
   }
 
   // 解析发言人音色
-  let speakerVoices: Record<string, SpeakerVoiceConfig> = {}
-  if (episode.speakerVoices) {
-    try {
-      speakerVoices = JSON.parse(episode.speakerVoices)
-      // 为音频URL生成签名
-      for (const speaker of Object.keys(speakerVoices)) {
-        if (speakerVoices[speaker].audioUrl && !speakerVoices[speaker].audioUrl.startsWith('http')) {
-          speakerVoices[speaker].audioUrl = getSignedUrl(speakerVoices[speaker].audioUrl, 7200)
-        }
-      }
-    } catch {
-      speakerVoices = {}
+  const speakerVoices = parseSpeakerVoices(episode.speakerVoices, `get episodeId=${episodeId}`)
+  // 为音频URL生成签名
+  for (const speaker of Object.keys(speakerVoices)) {
+    const config = speakerVoices[speaker]
+    const audioUrl = typeof config?.audioUrl === 'string' ? config.audioUrl : ''
+    if (audioUrl && !audioUrl.startsWith('http')) {
+      config.audioUrl = getSignedUrl(audioUrl, 7200)
     }
   }
 
@@ -73,7 +88,7 @@ export const PATCH = apiHandler(async (
   const authResult = await requireProjectAuthLight(projectId)
   if (isErrorResponse(authResult)) return authResult
 
-  const body = await request.json().catch(() => null)
+  const body = await readRequestJsonObject(request)
   const episodeId = typeof body?.episodeId === 'string' ? body.episodeId : ''
   const speaker = typeof body?.speaker === 'string' ? body.speaker.trim() : ''
   const audioUrl = typeof body?.audioUrl === 'string' ? body.audioUrl.trim() : ''
@@ -107,14 +122,7 @@ export const PATCH = apiHandler(async (
   }
 
   // 解析现有 speakerVoices，合并新条目
-  let speakerVoices: Record<string, SpeakerVoiceConfig> = {}
-  if (episode.speakerVoices) {
-    try {
-      speakerVoices = JSON.parse(episode.speakerVoices)
-    } catch {
-      speakerVoices = {}
-    }
-  }
+  const speakerVoices = parseSpeakerVoices(episode.speakerVoices, `patch episodeId=${episodeId}`)
 
   // 将前端传来的 audioUrl（可能是 /m/m_xxx 媒体路由）还原为原始 storageKey
   // 保证与资产库角色的 customVoiceUrl 格式一致，Worker 端能正确处理

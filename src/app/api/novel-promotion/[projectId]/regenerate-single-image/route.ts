@@ -12,9 +12,33 @@ import {
   hasLocationImageOutput
 } from '@/lib/task/has-output'
 
-function toNumber(value: unknown) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function toTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function toInteger(value: unknown): number | null {
   const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : null
+  if (!Number.isFinite(parsed)) return null
+  return Math.floor(parsed)
+}
+
+function buildRegenerateSingleImageTaskPayload(input: unknown): Record<string, unknown> {
+  if (!isRecord(input)) return {}
+  const type = toTrimmedString(input.type)
+  const id = toTrimmedString(input.id)
+  const appearanceId = toTrimmedString(input.appearanceId)
+  const imageIndex = toInteger(input.imageIndex)
+
+  return {
+    ...(type ? { type } : {}),
+    ...(id ? { id } : {}),
+    ...(appearanceId ? { appearanceId } : {}),
+    ...(imageIndex !== null ? { imageIndex } : {}),
+  }
 }
 
 export const POST = apiHandler(async (
@@ -28,11 +52,12 @@ export const POST = apiHandler(async (
   const { session } = authResult
 
   const body = await request.json()
+  const taskPayload = buildRegenerateSingleImageTaskPayload(body)
   const locale = resolveRequiredTaskLocale(request, body)
-  const type = body?.type
-  const id = body?.id
-  const appearanceId = body?.appearanceId
-  const imageIndex = body?.imageIndex
+  const type = typeof taskPayload.type === 'string' ? taskPayload.type : ''
+  const id = typeof taskPayload.id === 'string' ? taskPayload.id : ''
+  const appearanceId = typeof taskPayload.appearanceId === 'string' ? taskPayload.appearanceId : ''
+  const imageIndex = taskPayload.imageIndex
 
   if (!type || !id || imageIndex === undefined) {
     throw new ApiError('INVALID_PARAMS')
@@ -45,7 +70,10 @@ export const POST = apiHandler(async (
   const taskType = type === 'character' ? TASK_TYPE.IMAGE_CHARACTER : TASK_TYPE.IMAGE_LOCATION
   const targetType = type === 'character' ? 'CharacterAppearance' : 'LocationImage'
   const targetId = type === 'character' ? (appearanceId || id) : id
-  const parsedImageIndex = toNumber(imageIndex)
+  const parsedImageIndex = typeof imageIndex === 'number' ? imageIndex : null
+  if (parsedImageIndex === null) {
+    throw new ApiError('INVALID_PARAMS')
+  }
   const hasOutputAtStart = type === 'character'
     ? await hasCharacterAppearanceOutput({
       appearanceId: targetId,
@@ -67,7 +95,7 @@ export const POST = apiHandler(async (
       projectId,
       userId: session.user.id,
       imageModel,
-      basePayload: body,
+      basePayload: taskPayload,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Image model capability not configured'
@@ -85,7 +113,7 @@ export const POST = apiHandler(async (
       intent: 'regenerate',
       hasOutputAtStart
     }),
-    dedupeKey: `${taskType}:${targetId}:single:${imageIndex}`,
+    dedupeKey: `${taskType}:${targetId}:single:${parsedImageIndex}`,
     billingInfo: buildDefaultTaskBillingInfo(taskType, billingPayload)
   })
 

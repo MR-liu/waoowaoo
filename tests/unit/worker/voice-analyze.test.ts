@@ -156,7 +156,13 @@ describe('worker voice-analyze behavior', () => {
   })
 
   it('success path -> persists mapped panelId and speaker stats', async () => {
-    const job = buildJob({ episodeId: 'episode-1' })
+    const job = buildJob({
+      episodeId: 'episode-1',
+      model: 'llm::analysis-runtime',
+      reasoning: false,
+      reasoningEffort: 'low',
+      temperature: 0.3,
+    })
     const result = await handleVoiceAnalyzeTask(job)
 
     expect(result).toEqual({
@@ -168,6 +174,18 @@ describe('worker voice-analyze behavior', () => {
         Narrator: 1,
       },
     })
+    expect(llmMock.chatCompletion).toHaveBeenCalledWith(
+      'user-1',
+      'llm::analysis-runtime',
+      [{ role: 'user', content: 'voice-analysis-prompt' }],
+      expect.objectContaining({
+        reasoning: false,
+        reasoningEffort: 'low',
+        temperature: 0.3,
+        projectId: 'project-1',
+        action: 'voice_analyze',
+      }),
+    )
 
     expect(txState.createdRows[0]).toEqual(expect.objectContaining({
       episodeId: 'episode-1',
@@ -196,5 +214,14 @@ describe('worker voice-analyze behavior', () => {
 
     const job = buildJob({ episodeId: 'episode-1' })
     await expect(handleVoiceAnalyzeTask(job)).rejects.toThrow('references non-existent panel')
+  })
+
+  it('invalid runtime options in payload -> explicit error', async () => {
+    const job = buildJob({
+      episodeId: 'episode-1',
+      reasoning: 'invalid',
+    })
+    await expect(handleVoiceAnalyzeTask(job)).rejects.toThrow('INVALID_RUNTIME_OPTIONS: reasoning must be a boolean')
+    expect(llmMock.chatCompletion).not.toHaveBeenCalled()
   })
 })

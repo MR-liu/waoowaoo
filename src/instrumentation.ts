@@ -14,21 +14,11 @@ export async function register() {
 
     // Phase 1: 将 processing 任务打回 queued
     try {
-      const resetResult = await prisma.task.updateMany({
-        where: {
-          status: 'processing',
-        },
-        data: {
-          status: 'queued',
-          startedAt: null,
-          heartbeatAt: null,
-          // 保留 externalId，让 worker 重启后能从中断处继续轮询
-          // 而不是重新提交给外部 API（Kling 等），避免重复扣费
-        },
-      })
+      const { resetProcessingTasksToQueuedOnStartup } = await import('@/lib/task/service')
+      const resetCount = await resetProcessingTasksToQueuedOnStartup()
 
-      if (resetResult.count > 0) {
-        _ulogInfo(`[Instrumentation] Reset ${resetResult.count} processing tasks to queued`)
+      if (resetCount > 0) {
+        _ulogInfo(`[Instrumentation] Reset ${resetCount} processing tasks to queued`)
       }
     } catch (error) {
       _ulogError('[Instrumentation] Failed to reset processing tasks:', error)
@@ -38,8 +28,9 @@ export async function register() {
     // 解决 Redis 重启后 DB 仍为 queued 但 BullMQ Job 丢失的孤儿任务问题
     try {
       const { addTaskJob } = await import('@/lib/task/queues')
+      const { markTaskEnqueued, markTaskEnqueueFailed, tryMarkTaskFailed } = await import('@/lib/task/service')
       const { locales } = await import('@/i18n/routing')
-      const { TASK_STATUS, TASK_TYPE } = await import('@/lib/task/types')
+      const { TASK_TYPE } = await import('@/lib/task/types')
       type TaskBillingInfo = import('@/lib/task/types').TaskBillingInfo
       type TaskJobData = import('@/lib/task/types').TaskJobData
       type TaskType = import('@/lib/task/types').TaskType
@@ -67,26 +58,6 @@ export async function register() {
         const billing = value as Record<string, unknown>
         if (billing.billable !== true && billing.billable !== false) return null
         return billing as TaskBillingInfo
-      }
-
-      async function markTaskEnqueued(taskId: string) {
-        await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            enqueuedAt: new Date(),
-            lastEnqueueError: null,
-          },
-        })
-      }
-
-      async function markTaskEnqueueFailed(taskId: string, error: string) {
-        await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            enqueueAttempts: { increment: 1 },
-            lastEnqueueError: error.slice(0, 500),
-          },
-        })
       }
 
       function resolveTaskLocaleFromPayload(payload: unknown): TaskJobData['locale'] | null {
@@ -136,30 +107,28 @@ export async function register() {
           try {
             const taskType = toTaskType(task.type)
             if (!taskType) {
-              await prisma.task.update({
-                where: { id: task.id },
-                data: {
-                  status: TASK_STATUS.FAILED,
-                  errorCode: 'INVALID_TASK_TYPE',
-                  errorMessage: `invalid task type: ${String(task.type)}`,
-                  finishedAt: new Date(),
-                },
-              })
+              const marked = await tryMarkTaskFailed(
+                task.id,
+                'INVALID_TASK_TYPE',
+                `invalid task type: ${String(task.type)}`,
+              )
+              if (!marked) {
+                _ulogError(`[Instrumentation] Failed to mark INVALID_TASK_TYPE for task ${task.id}`)
+              }
               failed++
               continue
             }
 
             const locale = resolveTaskLocaleFromPayload(task.payload)
             if (!locale) {
-              await prisma.task.update({
-                where: { id: task.id },
-                data: {
-                  status: TASK_STATUS.FAILED,
-                  errorCode: 'TASK_LOCALE_REQUIRED',
-                  errorMessage: 'task locale is missing',
-                  finishedAt: new Date(),
-                },
-              })
+              const marked = await tryMarkTaskFailed(
+                task.id,
+                'TASK_LOCALE_REQUIRED',
+                'task locale is missing',
+              )
+              if (!marked) {
+                _ulogError(`[Instrumentation] Failed to mark TASK_LOCALE_REQUIRED for task ${task.id}`)
+              }
               failed++
               continue
             }
@@ -180,11 +149,19 @@ export async function register() {
             await addTaskJob(jobData, {
               priority: typeof task.priority === 'number' ? task.priority : 0,
             })
-            await markTaskEnqueued(task.id)
+            const marked = await markTaskEnqueued(task.id)
+            if (!marked) {
+              _ulogError(`[Instrumentation] Failed to mark task enqueued: ${task.id}`)
+              failed++
+              continue
+            }
             enqueued++
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
-            await markTaskEnqueueFailed(task.id, message || 're-enqueue failed')
+            const marked = await markTaskEnqueueFailed(task.id, message || 're-enqueue failed')
+            if (!marked) {
+              _ulogError(`[Instrumentation] Failed to persist enqueue failure for task ${task.id}`)
+            }
             _ulogError(`[Instrumentation] Failed to re-enqueue task ${task.id}:`, message)
             failed++
           }

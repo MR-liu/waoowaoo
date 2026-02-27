@@ -12,6 +12,29 @@ import { composeModelKey, parseModelKeyStrict } from '@/lib/model-config-contrac
 
 const DEFAULT_LIPSYNC_MODEL_KEY = composeModelKey('fal', 'fal-ai/kling-video/lipsync/audio-to-video')
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function buildLipSyncTaskPayload(input: unknown, lipSyncModel: string): Record<string, unknown> {
+  if (!isRecord(input)) {
+    return { lipSyncModel }
+  }
+  const storyboardId = typeof input.storyboardId === 'string' ? input.storyboardId.trim() : ''
+  const panelIndex =
+    typeof input.panelIndex === 'number' && Number.isFinite(input.panelIndex)
+      ? Math.floor(input.panelIndex)
+      : null
+  const voiceLineId = typeof input.voiceLineId === 'string' ? input.voiceLineId.trim() : ''
+
+  return {
+    ...(storyboardId ? { storyboardId } : {}),
+    ...(panelIndex !== null ? { panelIndex } : {}),
+    ...(voiceLineId ? { voiceLineId } : {}),
+    lipSyncModel,
+  }
+}
+
 export const POST = apiHandler(async (
   request: NextRequest,
   context: { params: Promise<{ projectId: string }> },
@@ -24,10 +47,13 @@ export const POST = apiHandler(async (
 
   const body = await request.json()
   const locale = resolveRequiredTaskLocale(request, body)
-  const storyboardId = body?.storyboardId
-  const panelIndex = body?.panelIndex
-  const voiceLineId = body?.voiceLineId
-  const requestedLipSyncModel = typeof body?.lipSyncModel === 'string' ? body.lipSyncModel.trim() : ''
+  const storyboardId = isRecord(body) && typeof body.storyboardId === 'string' ? body.storyboardId : null
+  const panelIndex = isRecord(body) ? body.panelIndex : null
+  const voiceLineId = isRecord(body) && typeof body.voiceLineId === 'string' ? body.voiceLineId : null
+  const requestedLipSyncModel =
+    isRecord(body) && typeof body.lipSyncModel === 'string'
+      ? body.lipSyncModel.trim()
+      : ''
 
   if (!storyboardId || panelIndex === undefined || !voiceLineId) {
     throw new ApiError('INVALID_PARAMS')
@@ -61,10 +87,7 @@ export const POST = apiHandler(async (
     throw new ApiError('NOT_FOUND')
   }
 
-  const payload = {
-    ...body,
-    lipSyncModel: resolvedLipSyncModel,
-  }
+  const payload = buildLipSyncTaskPayload(body, resolvedLipSyncModel)
 
   const result = await submitTask({
     userId: session.user.id,

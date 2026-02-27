@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { getRequestId } from '@/lib/api-errors'
+import { NextRequest } from 'next/server'
+import { apiSuccess, getRequestId } from '@/lib/api-errors'
 import { submitTask } from '@/lib/task/submitter'
 import { TASK_TYPE, type TaskType } from '@/lib/task/types'
 import { buildDefaultTaskBillingInfo, isBillableTaskType } from '@/lib/billing'
@@ -152,5 +152,5 @@ export async function maybeSubmitLLMTask(params: {
     billingInfo,
   })
 
-  return NextResponse.json(taskResult)
+  return apiSuccess(params.request, taskResult, { flattenData: true })
 }

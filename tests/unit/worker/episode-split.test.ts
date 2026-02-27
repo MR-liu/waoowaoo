@@ -79,7 +79,7 @@ vi.mock('@/lib/novel-promotion/story-to-script/clip-matching', () => ({
 
 import { handleEpisodeSplitTask } from '@/lib/workers/handlers/episode-split'
 
-function buildJob(content: string): Job<TaskJobData> {
+function buildJob(content: string, extraPayload: Record<string, unknown> = {}): Job<TaskJobData> {
   return {
     data: {
       taskId: 'task-episode-split-1',
@@ -88,7 +88,7 @@ function buildJob(content: string): Job<TaskJobData> {
       projectId: 'project-1',
       targetType: 'NovelPromotionProject',
       targetId: 'project-1',
-      payload: { content },
+      payload: { content, ...extraPayload },
       userId: 'user-1',
     },
   } as unknown as Job<TaskJobData>
@@ -123,5 +123,53 @@ describe('worker episode-split', () => {
     expect(result.episodes[0]?.title).toBe('第一集')
     expect(result.episodes[0]?.content).toContain('START_MARKER')
     expect(result.episodes[0]?.content).toContain('END_MARKER')
+  })
+
+  it('applies runtime options from payload to llm call', async () => {
+    const content = [
+      '前置内容用于凑长度，确保文本超过一百字。这一段会重复两次以保证长度满足阈值。',
+      '前置内容用于凑长度，确保文本超过一百字。这一段会重复两次以保证长度满足阈值。',
+      'START_MARKER',
+      '这里是第一集的正文内容，包含角色冲突与场景推进，长度足够用于单元测试验证。',
+      'END_MARKER',
+      '后置内容用于确保边界外还有文本，并继续补足长度。',
+    ].join('')
+    const job = buildJob(content, {
+      model: 'llm::runtime-model',
+      reasoning: false,
+      reasoningEffort: 'medium',
+      temperature: 0.8,
+    })
+
+    await handleEpisodeSplitTask(job)
+
+    expect(llmClientMock.chatCompletion).toHaveBeenCalledWith(
+      'user-1',
+      'llm::runtime-model',
+      [{ role: 'user', content: expect.any(String) }],
+      expect.objectContaining({
+        reasoning: false,
+        reasoningEffort: 'medium',
+        temperature: 0.8,
+        projectId: 'project-1',
+        action: 'episode_split',
+      }),
+    )
+  })
+
+  it('invalid runtime options in payload -> explicit error', async () => {
+    const content = [
+      '前置内容用于凑长度，确保文本超过一百字。这一段会重复两次以保证长度满足阈值。',
+      '前置内容用于凑长度，确保文本超过一百字。这一段会重复两次以保证长度满足阈值。',
+      'START_MARKER',
+      '这里是第一集的正文内容，包含角色冲突与场景推进，长度足够用于单元测试验证。',
+      'END_MARKER',
+      '后置内容用于确保边界外还有文本，并继续补足长度。',
+    ].join('')
+    const job = buildJob(content, {
+      reasoning: 'invalid',
+    })
+    await expect(handleEpisodeSplitTask(job)).rejects.toThrow('INVALID_RUNTIME_OPTIONS: reasoning must be a boolean')
+    expect(llmClientMock.chatCompletion).not.toHaveBeenCalled()
   })
 })

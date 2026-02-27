@@ -10,6 +10,7 @@ import { createTextMarkerMatcher } from '@/lib/novel-promotion/story-to-script/c
 import { createWorkerLLMStreamCallbacks, createWorkerLLMStreamContext } from './llm-stream'
 import type { TaskJobData } from '@/lib/task/types'
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompt-i18n'
+import { resolveLLMRuntimeOptionOverridesFromPayload } from './llm-runtime-options'
 
 type EpisodeSplit = {
   number?: number
@@ -104,6 +105,12 @@ export async function handleEpisodeSplitTask(job: Job<TaskJobData>) {
   if (!analysisModel) {
     throw new Error('请先在设置页面配置分析模型')
   }
+  const runtimeOptions = resolveLLMRuntimeOptionOverridesFromPayload({
+    payload,
+    fallbackModel: analysisModel,
+    defaultTemperature: 0.3,
+    defaultReasoning: true,
+  })
 
   const promptBase = buildPrompt({
     promptId: PROMPT_IDS.NP_EPISODE_SPLIT,
@@ -142,12 +149,12 @@ export async function handleEpisodeSplitTask(job: Job<TaskJobData>) {
           async () =>
             await chatCompletion(
               job.data.userId,
-              analysisModel,
+              runtimeOptions.model,
               [{ role: 'user', content: prompt }],
               {
-                temperature: 0.3,
-                reasoning: true,
-                reasoningEffort: 'high',
+                ...(typeof runtimeOptions.temperature === 'number' ? { temperature: runtimeOptions.temperature } : {}),
+                ...(typeof runtimeOptions.reasoning === 'boolean' ? { reasoning: runtimeOptions.reasoning } : {}),
+                ...(runtimeOptions.reasoningEffort ? { reasoningEffort: runtimeOptions.reasoningEffort } : {}),
                 projectId,
                 action: 'episode_split',
                 streamStepId: attempt === 1 ? 'episode_split' : `episode_split_retry_${attempt}`,

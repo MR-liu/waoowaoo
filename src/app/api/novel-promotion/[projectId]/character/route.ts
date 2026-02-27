@@ -7,11 +7,6 @@ import { apiHandler, ApiError } from '@/lib/api-errors'
 import { PRIMARY_APPEARANCE_INDEX } from '@/lib/constants'
 import { resolveTaskLocale } from '@/lib/task/resolve-locale'
 
-function toObject(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  return value as Record<string, unknown>
-}
-
 // 更新角色信息（名字或介绍）
 export const PATCH = apiHandler(async (
   request: NextRequest,
@@ -88,7 +83,6 @@ export const POST = apiHandler(async (
 
   const body = await request.json()
   const taskLocale = resolveTaskLocale(request, body)
-  const bodyMeta = toObject((body as Record<string, unknown>).meta)
   const acceptLanguage = request.headers.get('accept-language') || ''
   const {
     name,
@@ -153,10 +147,6 @@ export const POST = apiHandler(async (
         artStyle: artStyle || 'american-comic',
         customDescription: customDescription || undefined,  // 🔥 传递自定义描述（文生图模式）
         locale: taskLocale || undefined,
-        meta: {
-          ...bodyMeta,
-          locale: taskLocale || bodyMeta.locale || undefined,
-        },
       })
     }).catch(err => {
       _ulogError('[Character API] 参考图后台生成任务触发失败:', err)
@@ -177,10 +167,6 @@ export const POST = apiHandler(async (
         appearanceIndex: PRIMARY_APPEARANCE_INDEX,
         artStyle: artStyle || 'american-comic',
         locale: taskLocale || undefined,
-        meta: {
-          ...bodyMeta,
-          locale: taskLocale || bodyMeta.locale || undefined,
-        },
       })
     }).catch(err => {
       _ulogError('[Character API] 后台图片生成任务触发失败:', err)

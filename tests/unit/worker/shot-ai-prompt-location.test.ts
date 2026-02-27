@@ -78,11 +78,13 @@ describe('worker shot-ai-prompt-location behavior', () => {
       imageIndex: 2,
       currentDescription: 'old location',
       modifyInstruction: 'add fog',
+      analysisModel: 'llm::override',
     }
     const job = buildJob(payload)
 
     const result = await handleModifyLocationTask(job, payload)
 
+    expect(persistMock.resolveAnalysisModel).toHaveBeenCalledWith('project-1', 'llm::override')
     expect(runtimeMock.runShotPromptCompletion).toHaveBeenCalledWith(expect.objectContaining({
       action: 'ai_modify_location',
       prompt: 'location-final-prompt',

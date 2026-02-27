@@ -55,7 +55,7 @@ vi.mock('@/lib/prompt-i18n', () => ({
 
 import { handleAnalyzeNovelTask } from '@/lib/workers/handlers/analyze-novel'
 
-function buildJob(): Job<TaskJobData> {
+function buildJob(payload: Record<string, unknown> = {}): Job<TaskJobData> {
   return {
     data: {
       taskId: 'task-analyze-novel-1',
@@ -65,7 +65,7 @@ function buildJob(): Job<TaskJobData> {
       episodeId: 'episode-1',
       targetType: 'NovelPromotionProject',
       targetId: 'np-project-1',
-      payload: {},
+      payload,
       userId: 'user-1',
     },
   } as unknown as Job<TaskJobData>
@@ -193,5 +193,33 @@ describe('worker analyze-novel behavior', () => {
         output: expect.stringContaining('"locations"'),
       }),
     )
+  })
+
+  it('runtime options in payload are applied to every llm call', async () => {
+    await handleAnalyzeNovelTask(buildJob({
+      model: 'llm::analysis-runtime',
+      reasoning: false,
+      reasoningEffort: 'low',
+      temperature: 0.2,
+    }))
+
+    const calls = llmMock.chatCompletion.mock.calls as Array<[string, string, unknown[], Record<string, unknown>]>
+    expect(calls).toHaveLength(2)
+
+    for (const call of calls) {
+      expect(call[1]).toBe('llm::analysis-runtime')
+      expect(call[3]).toEqual(expect.objectContaining({
+        temperature: 0.2,
+        reasoning: false,
+        reasoningEffort: 'low',
+      }))
+    }
+  })
+
+  it('invalid runtime options in payload -> explicit error', async () => {
+    await expect(handleAnalyzeNovelTask(buildJob({
+      temperature: 'invalid',
+    }))).rejects.toThrow('INVALID_RUNTIME_OPTIONS: temperature must be a finite number')
+    expect(llmMock.chatCompletion).not.toHaveBeenCalled()
   })
 })

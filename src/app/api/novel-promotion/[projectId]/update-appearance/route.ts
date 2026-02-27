@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { logWarn as _ulogWarn } from '@/lib/logging/core'
 
 export const POST = apiHandler(async (
   request: NextRequest,
@@ -34,7 +35,12 @@ export const POST = apiHandler(async (
   // 解析 descriptions JSON
   let descriptions: string[] = []
   if (appearance.descriptions) {
-    try { descriptions = JSON.parse(appearance.descriptions) } catch { }
+    try {
+      descriptions = JSON.parse(appearance.descriptions)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      _ulogWarn(`[Update Appearance] descriptions JSON parse failed appearanceId=${appearance.id} error=${message}`)
+    }
   }
   if (descriptions.length === 0) {
     descriptions = [appearance.description || '']

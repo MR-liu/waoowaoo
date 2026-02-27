@@ -1,6 +1,7 @@
 import { Worker, type Job } from 'bullmq'
 import { prisma } from '@/lib/prisma'
 import { queueRedis } from '@/lib/redis'
+import { createScopedLogger } from '@/lib/logging/core'
 import { chatCompletion, getCompletionContent } from '@/lib/llm-client'
 import { withInternalLLMStreamCallbacks, type InternalLLMStreamCallbacks } from '@/lib/llm-observe/internal-stream-context'
 import type { LLMStreamKind } from '@/lib/llm-observe/types'
@@ -66,10 +67,35 @@ function createWorkerLLMStreamCallbacks(
 ): WorkerInternalLLMStreamCallbacks {
   const maxChunkChars = 128
   let publishQueue: Promise<void> = Promise.resolve()
+  const streamLogger = createScopedLogger({
+    module: 'worker.text',
+    action: 'worker.llm_stream',
+    taskId: job.data.taskId,
+    projectId: job.data.projectId,
+    userId: job.data.userId,
+  })
 
   const enqueue = (work: () => Promise<void>) => {
     publishQueue = publishQueue
-      .catch(() => undefined)
+      .catch((error: unknown) => {
+        streamLogger.error({
+          action: 'worker.llm_stream.publish_failed',
+          message: 'failed to publish llm stream callback event',
+          errorCode: 'STREAM_EVENT_PUBLISH_FAILED',
+          retryable: true,
+          error:
+            error instanceof Error
+              ? {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+              }
+              : {
+                message: String(error),
+              },
+        })
+        throw error
+      })
       .then(work)
   }
 
@@ -171,7 +197,7 @@ function createWorkerLLMStreamCallbacks(
       })
     },
     async flush() {
-      await publishQueue.catch(() => undefined)
+      await publishQueue
     },
   }
 }
@@ -198,7 +224,7 @@ function parseJsonObjectResponse(responseText: string): JsonRecord {
   return record
 }
 
-function parsePanelCharacters(panel: { characters: string | null } | null | undefined): string[] {
+function parsePanelCharacters(panel: { id?: string; characters: string | null } | null | undefined): string[] {
   if (!panel?.characters) return []
   try {
     const raw = JSON.parse(panel.characters)
@@ -212,8 +238,12 @@ function parsePanelCharacters(panel: { characters: string | null } | null | unde
             : '',
       )
       .filter(Boolean)
-  } catch {
-    return []
+  } catch (error) {
+    throw new Error(
+      `PANEL_CHARACTERS_JSON_INVALID: panel=${panel.id || 'unknown'}; ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
   }
 }
 
@@ -479,8 +509,12 @@ async function handleInsertPanelTask(job: Job<TaskJobData>) {
             try {
               const parsed = JSON.parse(appearance.descriptions)
               return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
-            } catch {
-              return [] as string[]
+            } catch (error) {
+              throw new Error(
+                `CHARACTER_APPEARANCE_DESCRIPTIONS_INVALID: appearance=${appearance.id}; ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              )
             }
           })() : []
           const selectedIndex = appearance.selectedIndex ?? 0

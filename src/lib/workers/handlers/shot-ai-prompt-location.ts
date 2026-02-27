@@ -19,7 +19,7 @@ export async function handleModifyLocationTask(job: Job<TaskJobData>, payload: A
   const imageIndex = Number.isFinite(imageIndexValue) ? Math.max(0, Math.floor(imageIndexValue)) : 0
   const currentDescription = readRequiredString(payload.currentDescription, 'currentDescription')
   const modifyInstruction = readRequiredString(payload.modifyInstruction, 'modifyInstruction')
-  const novelData = await resolveAnalysisModel(job.data.projectId)
+  const novelData = await resolveAnalysisModel(job.data.projectId, payload.analysisModel)
   const location = await requireProjectLocation(locationId, novelData.id)
 
   const finalPrompt = buildPrompt({

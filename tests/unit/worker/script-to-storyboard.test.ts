@@ -247,9 +247,14 @@ describe('worker script-to-storyboard behavior', () => {
     parseVoiceLinesJsonMock.mockReturnValue(baseVoiceRows())
   })
 
-  it('缺少 episodeId -> 显式失败', async () => {
+  it('缺少 payload.episodeId -> 显式失败', async () => {
     const job = buildJob({}, null)
-    await expect(handleScriptToStoryboardTask(job)).rejects.toThrow('episodeId is required')
+    await expect(handleScriptToStoryboardTask(job)).rejects.toThrow('TASK_PAYLOAD_EPISODE_ID_REQUIRED')
+  })
+
+  it('payload.episodeId 与 job.episodeId 不一致 -> 显式失败', async () => {
+    const job = buildJob({ episodeId: 'episode-2' })
+    await expect(handleScriptToStoryboardTask(job)).rejects.toThrow('TASK_PAYLOAD_EPISODE_ID_MISMATCH')
   })
 
   it('成功路径: 写入 voice line 时包含 matchedPanel 映射后的 panelId', async () => {

@@ -74,11 +74,13 @@ describe('worker shot-ai-prompt-appearance behavior', () => {
       appearanceId: 'appearance-1',
       currentDescription: 'old desc',
       modifyInstruction: 'new style',
+      analysisModel: 'llm::override',
     }
     const job = buildJob(payload)
 
     const result = await handleModifyAppearanceTask(job, payload)
 
+    expect(persistMock.resolveAnalysisModel).toHaveBeenCalledWith('project-1', 'llm::override')
     expect(runtimeMock.runShotPromptCompletion).toHaveBeenCalledWith(expect.objectContaining({
       action: 'ai_modify_appearance',
       prompt: 'appearance-final-prompt',

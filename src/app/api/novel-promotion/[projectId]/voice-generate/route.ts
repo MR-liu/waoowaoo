@@ -10,6 +10,7 @@ import { estimateVoiceLineMaxSeconds } from '@/lib/voice/generate-voice-line'
 import { hasVoiceLineAudioOutput } from '@/lib/task/has-output'
 import { withTaskUiPayload } from '@/lib/task/ui-payload'
 import { parseModelKeyStrict } from '@/lib/model-config-contract'
+import { readRequestJsonObject } from '@/lib/request-json'
 
 type VoiceLineRow = {
   id: string
@@ -56,7 +57,7 @@ export const POST = apiHandler(async (
   if (isErrorResponse(authResult)) return authResult
   const { session } = authResult
 
-  const body = await request.json().catch(() => null)
+  const body = await readRequestJsonObject(request)
   const locale = resolveRequiredTaskLocale(request, body)
   const episodeId = typeof body?.episodeId === 'string' ? body.episodeId : ''
   const lineId = typeof body?.lineId === 'string' ? body.lineId : ''

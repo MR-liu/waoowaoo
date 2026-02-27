@@ -163,7 +163,10 @@ async function collectProjectCOSKeys(projectId: string): Promise<string[]> {
             const key = await resolveStorageKeyFromMediaValue(url)
             if (key) keys.push(key)
           }
-        } catch { }
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error)
+          _ulogError(`[Project ${projectId}] 解析候选图失败 storyboardId=${storyboard.id} error=${message}`)
+        }
       }
 
       // Panel 表中的图片和视频

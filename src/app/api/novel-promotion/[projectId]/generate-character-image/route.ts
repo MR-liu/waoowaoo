@@ -5,11 +5,6 @@ import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
 import { resolveTaskLocale } from '@/lib/task/resolve-locale'
 
-function toObject(value: unknown): Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-    return value as Record<string, unknown>
-}
-
 /**
  * POST /api/novel-promotion/[projectId]/generate-character-image
  * 专门用于后台触发角色图片生成的简化 API
@@ -27,7 +22,6 @@ export const POST = apiHandler(async (
 
     const body = await request.json()
     const taskLocale = resolveTaskLocale(request, body)
-    const bodyMeta = toObject((body as Record<string, unknown>).meta)
     const acceptLanguage = request.headers.get('accept-language') || ''
     const { characterId, appearanceId, artStyle } = body
 
@@ -88,10 +82,6 @@ export const POST = apiHandler(async (
             id: characterId,
             appearanceId: targetAppearanceId,  // 使用真正的 UUID
             locale: taskLocale || undefined,
-            meta: {
-                ...bodyMeta,
-                locale: taskLocale || bodyMeta.locale || undefined,
-            },
         })
     })
 

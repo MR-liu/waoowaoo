@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { readRequestJsonObject } from '@/lib/request-json'
 import { attachMediaFieldsToProject } from '@/lib/media/attach'
 
 /**
@@ -55,7 +56,7 @@ export const PATCH = apiHandler(async (
     const authResult = await requireProjectAuthLight(projectId)
     if (isErrorResponse(authResult)) return authResult
 
-    const body = await request.json().catch(() => ({}))
+    const body = await readRequestJsonObject(request)
     const storyboardId = typeof body?.storyboardId === 'string' ? body.storyboardId : ''
     if (!storyboardId) {
         throw new ApiError('INVALID_PARAMS')

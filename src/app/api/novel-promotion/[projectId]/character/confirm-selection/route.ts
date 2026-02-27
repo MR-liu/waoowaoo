@@ -88,7 +88,10 @@ export const POST = apiHandler(async (
   if (appearance.descriptions) {
     try {
       descriptions = JSON.parse(appearance.descriptions)
-    } catch { }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      _ulogWarn(`[Character Confirm Selection] descriptions JSON parse failed appearanceId=${appearance.id} error=${message}`)
+    }
   }
   const selectedDescription = descriptions[selectedIndex] || appearance.description || ''
 

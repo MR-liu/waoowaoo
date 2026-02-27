@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError, getRequestId } from '@/lib/api-errors'
+import { readRequestJsonObject } from '@/lib/request-json'
 import { submitTask } from '@/lib/task/submitter'
 import { resolveRequiredTaskLocale } from '@/lib/task/resolve-locale'
 import { TASK_TYPE } from '@/lib/task/types'
@@ -22,7 +23,7 @@ export const POST = apiHandler(async (
   if (isErrorResponse(authResult)) return authResult
   const { session } = authResult
 
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  const body = await readRequestJsonObject(request)
   const locale = resolveRequiredTaskLocale(request, body)
   const voicePrompt = typeof body.voicePrompt === 'string' ? body.voicePrompt.trim() : ''
   const previewText = typeof body.previewText === 'string' ? body.previewText.trim() : ''

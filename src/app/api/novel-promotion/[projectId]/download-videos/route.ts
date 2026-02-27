@@ -191,6 +191,7 @@ export const POST = apiHandler(async (
 
   // 处理视频并打包
   const isLocal = process.env.STORAGE_TYPE === 'local'
+  const failedDownloads: Array<{ index: number; reason: string }> = []
 
   for (const video of indexedVideos) {
     try {
@@ -245,9 +246,19 @@ export const POST = apiHandler(async (
       const fileName = `${String(video.index).padStart(3, '0')}_${safeDesc}.mp4`
       archive.append(videoData, { name: fileName })
       _ulogInfo(`Added ${fileName} to archive`)
-    } catch (error) {
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error)
+      failedDownloads.push({ index: video.index, reason })
       _ulogError(`Failed to download video ${video.index}:`, error)
     }
+  }
+
+  if (failedDownloads.length > 0) {
+    throw new ApiError('EXTERNAL_ERROR', {
+      message: `视频打包失败：${failedDownloads.length}/${indexedVideos.length} 个文件下载失败`,
+      total: indexedVideos.length,
+      failed: failedDownloads,
+    })
   }
 
   // 完成归档

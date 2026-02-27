@@ -1,4 +1,5 @@
 import type { RunState } from './types'
+import { logWarn as _ulogWarn } from '@/lib/logging/core'
 
 export const SNAPSHOT_TTL_MS = 1000 * 60 * 60 * 6
 
@@ -27,10 +28,15 @@ export function loadRunSnapshot(storageKey: string): RunState | null {
       return null
     }
     return snapshotRunState
-  } catch {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    _ulogWarn(`[RunSnapshot] load failed key=${storageKey} error=${message}`)
     try {
       window.sessionStorage.removeItem(storageKey)
-    } catch { }
+    } catch (removeError: unknown) {
+      const removeMessage = removeError instanceof Error ? removeError.message : String(removeError)
+      _ulogWarn(`[RunSnapshot] cleanup after load failed key=${storageKey} error=${removeMessage}`)
+    }
     return null
   }
 }
@@ -47,12 +53,18 @@ export function saveRunSnapshot(storageKey: string, runState: RunState | null) {
       runState,
     }
     window.sessionStorage.setItem(storageKey, JSON.stringify(snapshot))
-  } catch { }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    _ulogWarn(`[RunSnapshot] save failed key=${storageKey} error=${message}`)
+  }
 }
 
 export function clearRunSnapshot(storageKey: string) {
   if (typeof window === 'undefined') return
   try {
     window.sessionStorage.removeItem(storageKey)
-  } catch { }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    _ulogWarn(`[RunSnapshot] clear failed key=${storageKey} error=${message}`)
+  }
 }

@@ -8,6 +8,7 @@ import { assertTaskActive } from '@/lib/workers/utils'
 import { createWorkerLLMStreamCallbacks, createWorkerLLMStreamContext } from './llm-stream'
 import type { TaskJobData } from '@/lib/task/types'
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompt-i18n'
+import { resolveLLMRuntimeOptionsFromPayload } from './llm-runtime-options'
 
 function readText(value: unknown): string {
   return typeof value === 'string' ? value : ''
@@ -71,6 +72,11 @@ export async function handleAnalyzeNovelTask(job: Job<TaskJobData>) {
   if (!novelData.analysisModel) {
     throw new Error('analysisModel is not configured')
   }
+  const runtimeOptions = resolveLLMRuntimeOptionsFromPayload({
+    payload: job.data.payload,
+    fallbackModel: novelData.analysisModel,
+    defaultTemperature: 0.7,
+  })
 
   const firstEpisode = await prisma.novelPromotionEpisode.findFirst({
     where: { novelPromotionProjectId: novelData.id },
@@ -126,10 +132,12 @@ export async function handleAnalyzeNovelTask(job: Job<TaskJobData>) {
           await Promise.all([
             chatCompletion(
               job.data.userId,
-              novelData.analysisModel!,
+              runtimeOptions.model,
               [{ role: 'user', content: characterPromptTemplate }],
               {
-                temperature: 0.7,
+                temperature: runtimeOptions.temperature,
+                ...(typeof runtimeOptions.reasoning === 'boolean' ? { reasoning: runtimeOptions.reasoning } : {}),
+                ...(runtimeOptions.reasoningEffort ? { reasoningEffort: runtimeOptions.reasoningEffort } : {}),
                 projectId,
                 action: 'analyze_characters',
                 streamStepId: 'analyze_characters',
@@ -140,10 +148,12 @@ export async function handleAnalyzeNovelTask(job: Job<TaskJobData>) {
             ),
             chatCompletion(
               job.data.userId,
-              novelData.analysisModel!,
+              runtimeOptions.model,
               [{ role: 'user', content: locationPromptTemplate }],
               {
-                temperature: 0.7,
+                temperature: runtimeOptions.temperature,
+                ...(typeof runtimeOptions.reasoning === 'boolean' ? { reasoning: runtimeOptions.reasoning } : {}),
+                ...(runtimeOptions.reasoningEffort ? { reasoningEffort: runtimeOptions.reasoningEffort } : {}),
                 projectId,
                 action: 'analyze_locations',
                 streamStepId: 'analyze_locations',

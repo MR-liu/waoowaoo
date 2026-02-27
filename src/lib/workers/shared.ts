@@ -21,6 +21,8 @@ import { withTextUsageCollection } from '@/lib/billing/runtime-usage'
 import { onProjectNameAvailable } from '@/lib/logging/file-writer'
 import type { NormalizedError } from '@/lib/errors/types'
 
+const sharedLogger = createScopedLogger({ module: 'worker.shared' })
+
 function toObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return value as Record<string, unknown>
@@ -178,8 +180,22 @@ async function resolveProjectNameForLogging(projectId: string): Promise<void> {
     if (project?.name) {
       onProjectNameAvailable(projectId, project.name)
     }
-  } catch {
-    // Swallow – log file routing failure should never crash the worker.
+  } catch (error) {
+    sharedLogger.warn({
+      action: 'worker.project_name.resolve_failed',
+      message: 'failed to resolve project name for log routing',
+      projectId,
+      error:
+        error instanceof Error
+          ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+          }
+          : {
+            message: String(error),
+          },
+    })
   }
 }
 

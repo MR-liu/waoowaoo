@@ -9,6 +9,7 @@ import { assertTaskActive } from '@/lib/workers/utils'
 import { createWorkerLLMStreamCallbacks, createWorkerLLMStreamContext } from './llm-stream'
 import type { TaskJobData } from '@/lib/task/types'
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompt-i18n'
+import { resolveLLMRuntimeOptionOverridesFromPayload } from './llm-runtime-options'
 
 function parseClipArrayResponse(responseText: string): Array<Record<string, unknown>> {
   let cleaned = responseText.trim()
@@ -79,6 +80,10 @@ export async function handleClipsBuildTask(job: Job<TaskJobData>) {
   if (!novelData.analysisModel) {
     throw new Error('analysisModel is not configured')
   }
+  const runtimeOptions = resolveLLMRuntimeOptionOverridesFromPayload({
+    payload,
+    fallbackModel: novelData.analysisModel,
+  })
 
   const episode = await prisma.novelPromotionEpisode.findUnique({
     where: { id: episodeId },
@@ -146,9 +151,12 @@ export async function handleClipsBuildTask(job: Job<TaskJobData>) {
         async () =>
           await chatCompletion(
             job.data.userId,
-            novelData.analysisModel!,
+            runtimeOptions.model,
             [{ role: 'user', content: promptTemplate }],
             {
+              ...(typeof runtimeOptions.temperature === 'number' ? { temperature: runtimeOptions.temperature } : {}),
+              ...(typeof runtimeOptions.reasoning === 'boolean' ? { reasoning: runtimeOptions.reasoning } : {}),
+              ...(runtimeOptions.reasoningEffort ? { reasoningEffort: runtimeOptions.reasoningEffort } : {}),
               projectId,
               action: 'split_clips',
               streamStepId: attempt === 1 ? 'split_clips' : `split_clips_retry_${attempt}`,

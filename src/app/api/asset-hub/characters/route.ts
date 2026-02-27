@@ -9,11 +9,6 @@ import { PRIMARY_APPEARANCE_INDEX } from '@/lib/constants'
 import { encodeImageUrls } from '@/lib/contracts/image-urls-contract'
 import { resolveTaskLocale } from '@/lib/task/resolve-locale'
 
-function toObject(value: unknown): Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-    return value as Record<string, unknown>
-}
-
 // 获取用户所有角色（支持 folderId 筛选）
 export const GET = apiHandler(async (request: NextRequest) => {
     // 🔐 统一权限验证
@@ -53,7 +48,6 @@ export const POST = apiHandler(async (request: NextRequest) => {
 
     const body = await request.json()
     const taskLocale = resolveTaskLocale(request, body)
-    const bodyMeta = toObject((body as Record<string, unknown>).meta)
     const acceptLanguage = request.headers.get('accept-language') || ''
     const {
         name,
@@ -130,10 +124,6 @@ export const POST = apiHandler(async (request: NextRequest) => {
                 artStyle: artStyle || 'american-comic',
                 customDescription: customDescription || undefined,
                 locale: taskLocale || undefined,
-                meta: {
-                    ...bodyMeta,
-                    locale: taskLocale || bodyMeta.locale || undefined,
-                },
             })
         }).catch(err => {
             _ulogError('[Characters API] 后台生成任务触发失败:', err)

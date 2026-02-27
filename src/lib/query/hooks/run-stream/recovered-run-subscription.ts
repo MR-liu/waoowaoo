@@ -1,4 +1,5 @@
 import type { RunStreamEvent } from '@/lib/novel-promotion/run-stream/types'
+import { logWarn as _ulogWarn } from '@/lib/logging/core'
 import { TASK_SSE_EVENT_TYPE, type SSEEvent } from '@/lib/task/types'
 import { mapTaskSSEEventToRunEvents, toTerminalRunResult } from './event-parser'
 import type { RunResult } from './types'
@@ -52,8 +53,11 @@ async function replayTaskLifecycleEvents(args: {
         }
       }
     }
-  } catch {
-    // Ignore replay errors and continue with live SSE.
+  } catch (error) {
+    _ulogWarn('[RunStream] replay lifecycle events failed', {
+      taskId: args.taskId,
+      error: error instanceof Error ? error.message : String(error),
+    })
   }
 }
 

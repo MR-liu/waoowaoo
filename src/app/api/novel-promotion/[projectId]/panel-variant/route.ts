@@ -8,6 +8,62 @@ import { buildDefaultTaskBillingInfo } from '@/lib/billing'
 import { getProjectModelConfig, buildImageBillingPayload } from '@/lib/config-service'
 import { prisma } from '@/lib/prisma'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function toTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+type PanelVariantPayload = {
+  shot_type?: string
+  camera_move?: string
+  description?: string
+  video_prompt?: string
+  title?: string
+  location?: string
+  characters?: unknown[]
+}
+
+function sanitizePanelVariantPayload(input: unknown): PanelVariantPayload {
+  if (!isRecord(input)) return {}
+
+  const shotType = toTrimmedString(input.shot_type)
+  const cameraMove = toTrimmedString(input.camera_move)
+  const description = toTrimmedString(input.description)
+  const videoPrompt = toTrimmedString(input.video_prompt)
+  const title = toTrimmedString(input.title)
+  const location = toTrimmedString(input.location)
+  const characters = Array.isArray(input.characters) ? input.characters : undefined
+
+  return {
+    ...(shotType ? { shot_type: shotType } : {}),
+    ...(cameraMove ? { camera_move: cameraMove } : {}),
+    ...(description ? { description } : {}),
+    ...(videoPrompt ? { video_prompt: videoPrompt } : {}),
+    ...(title ? { title } : {}),
+    ...(location ? { location } : {}),
+    ...(characters ? { characters } : {}),
+  }
+}
+
+function buildPanelVariantTaskPayload(input: {
+  storyboardId: string
+  insertAfterPanelId: string
+  sourcePanelId: string
+  newPanelId: string
+  variant: PanelVariantPayload
+}): Record<string, unknown> {
+  return {
+    storyboardId: input.storyboardId,
+    insertAfterPanelId: input.insertAfterPanelId,
+    sourcePanelId: input.sourcePanelId,
+    newPanelId: input.newPanelId,
+    variant: input.variant,
+  }
+}
+
 export const POST = apiHandler(async (
   request: NextRequest,
   context: { params: Promise<{ projectId: string }> },
@@ -20,16 +76,16 @@ export const POST = apiHandler(async (
 
   const body = await request.json()
   const locale = resolveRequiredTaskLocale(request, body)
-  const storyboardId = body?.storyboardId
-  const insertAfterPanelId = body?.insertAfterPanelId
-  const sourcePanelId = body?.sourcePanelId
-  const variant = body?.variant
+  const storyboardId = isRecord(body) ? toTrimmedString(body.storyboardId) : ''
+  const insertAfterPanelId = isRecord(body) ? toTrimmedString(body.insertAfterPanelId) : ''
+  const sourcePanelId = isRecord(body) ? toTrimmedString(body.sourcePanelId) : ''
+  const variant = isRecord(body) ? sanitizePanelVariantPayload(body.variant) : {}
 
   if (!storyboardId || !insertAfterPanelId || !sourcePanelId) {
     throw new ApiError('INVALID_PARAMS')
   }
 
-  if (!variant || !variant.video_prompt) {
+  if (!variant.video_prompt) {
     throw new ApiError('INVALID_PARAMS')
   }
 
@@ -86,6 +142,13 @@ export const POST = apiHandler(async (
 
   const projectModelConfig = await getProjectModelConfig(projectId, session.user.id)
   const imageModel = projectModelConfig.storyboardModel
+  const taskPayload = buildPanelVariantTaskPayload({
+    storyboardId,
+    insertAfterPanelId,
+    sourcePanelId,
+    newPanelId: createdPanel.id,
+    variant,
+  })
 
   let billingPayload: Record<string, unknown>
   try {
@@ -93,7 +156,7 @@ export const POST = apiHandler(async (
       projectId,
       userId: session.user.id,
       imageModel,
-      basePayload: { ...body, newPanelId: createdPanel.id },
+      basePayload: taskPayload,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Image model capability not configured'

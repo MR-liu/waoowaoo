@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
 import { encodeImageUrls } from '@/lib/contracts/image-urls-contract'
 import { ApiError, apiHandler } from '@/lib/api-errors'
+import { logWarn as _ulogWarn } from '@/lib/logging/core'
 
 // 更新形象描述
 export const PATCH = apiHandler(async (
@@ -41,7 +42,12 @@ export const PATCH = apiHandler(async (
         const trimmedDescription = description.trim()
         let descriptions: string[] = []
         if (appearance.descriptions) {
-            try { descriptions = JSON.parse(appearance.descriptions) } catch { }
+            try {
+                descriptions = JSON.parse(appearance.descriptions)
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : String(error)
+                _ulogWarn(`[AssetHub Appearance] descriptions JSON parse failed appearanceId=${appearance.id} error=${message}`)
+            }
         }
         if (descriptions.length === 0) {
             descriptions = [appearance.description || '']

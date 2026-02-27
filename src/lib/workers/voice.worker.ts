@@ -10,16 +10,25 @@ type AnyObj = Record<string, unknown>
 
 async function handleVoiceLineTask(job: Job<TaskJobData>) {
   const payload = (job.data.payload || {}) as AnyObj
-  const lineId = typeof payload.lineId === 'string' ? payload.lineId : job.data.targetId
-  const episodeId = typeof payload.episodeId === 'string' ? payload.episodeId : job.data.episodeId
+  if (job.data.targetType !== 'NovelPromotionVoiceLine' || !job.data.targetId) {
+    throw new Error('VOICE_LINE_TASK_TARGET_INVALID: targetType must be NovelPromotionVoiceLine')
+  }
+  const lineId = typeof payload.lineId === 'string' ? payload.lineId.trim() : ''
+  const episodeId = typeof payload.episodeId === 'string' ? payload.episodeId.trim() : ''
   const audioModel = typeof payload.audioModel === 'string' && payload.audioModel.trim()
     ? payload.audioModel.trim()
     : undefined
   if (!lineId) {
-    throw new Error('VOICE_LINE task missing lineId')
+    throw new Error('VOICE_LINE_PAYLOAD_LINE_ID_REQUIRED: payload.lineId is required')
   }
   if (!episodeId) {
-    throw new Error('VOICE_LINE task missing episodeId')
+    throw new Error('VOICE_LINE_PAYLOAD_EPISODE_ID_REQUIRED: payload.episodeId is required')
+  }
+  if (lineId !== job.data.targetId) {
+    throw new Error('VOICE_LINE_PAYLOAD_LINE_ID_MISMATCH: payload.lineId must equal task.targetId')
+  }
+  if (!job.data.episodeId || episodeId !== job.data.episodeId) {
+    throw new Error('VOICE_LINE_PAYLOAD_EPISODE_ID_MISMATCH: payload.episodeId must equal task.episodeId')
   }
 
   await reportTaskProgress(job, 20, { stage: 'generate_voice_submit', lineId })

@@ -108,13 +108,14 @@ describe('worker asset-hub-ai-modify behavior', () => {
       characterId: 'char-1',
       currentDescription: 'old character description',
       modifyInstruction: 'add armor details',
+      analysisModel: 'llm::analysis-override',
     })
 
     const result = await handleAssetHubAIModifyTask(job)
 
     expect(llmMock.chatCompletion).toHaveBeenCalledWith(
       'user-1',
-      'llm::analysis-1',
+      'llm::analysis-override',
       [{ role: 'user', content: 'final-prompt' }],
       expect.objectContaining({
         projectId: 'asset-hub',

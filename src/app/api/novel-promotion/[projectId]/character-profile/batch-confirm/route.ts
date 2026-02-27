@@ -1,8 +1,20 @@
 import { NextRequest } from 'next/server'
 import { requireProjectAuth, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { readRequestJsonObject } from '@/lib/request-json'
 import { TASK_TYPE } from '@/lib/task/types'
 import { maybeSubmitLLMTask } from '@/lib/llm-observe/route-task'
+import { parseLLMRuntimeOptions } from '@/lib/llm-observe/route-runtime-options'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function buildCharacterProfileBatchConfirmPayload(input: unknown): Record<string, unknown> {
+  if (!isRecord(input)) return {}
+  const force = input.force === true ? true : undefined
+  return force ? { force } : {}
+}
 
 /**
  * 批量确认未确认角色档案
@@ -17,7 +29,22 @@ export const POST = apiHandler(async (
   if (isErrorResponse(authResult)) return authResult
   const { session } = authResult
 
-  const body = await request.json().catch(() => ({}))
+  const body = await readRequestJsonObject(request)
+  const parsedRuntimeOptions = parseLLMRuntimeOptions(body)
+  if (!parsedRuntimeOptions.ok) {
+    throw new ApiError('INVALID_PARAMS', { message: parsedRuntimeOptions.message })
+  }
+  if (
+    parsedRuntimeOptions.options.reasoning !== undefined
+    || parsedRuntimeOptions.options.reasoningEffort !== undefined
+    || parsedRuntimeOptions.options.temperature !== undefined
+  ) {
+    throw new ApiError('INVALID_PARAMS', { message: 'Only model is supported for this route' })
+  }
+  const taskPayload = buildCharacterProfileBatchConfirmPayload(body)
+  if (parsedRuntimeOptions.options.model) {
+    taskPayload.analysisModel = parsedRuntimeOptions.options.model
+  }
   const asyncTaskResponse = await maybeSubmitLLMTask({
     request,
     userId: session.user.id,
@@ -26,7 +53,7 @@ export const POST = apiHandler(async (
     targetType: 'NovelPromotionProject',
     targetId: projectId,
     routePath: `/api/novel-promotion/${projectId}/character-profile/batch-confirm`,
-    body,
+    body: taskPayload,
     dedupeKey: `character_profile_batch_confirm:${projectId}`})
   if (asyncTaskResponse) return asyncTaskResponse
 

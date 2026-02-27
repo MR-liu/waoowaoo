@@ -31,6 +31,7 @@ import {
 } from './runtime-shared'
 import { getCompletionParts } from './completion-parts'
 import { withStreamChunkTimeout } from './stream-timeout'
+import { readOptionalValue } from './read-optional'
 
 type GoogleModelClient = {
   generateContentStream?: (params: unknown) => Promise<unknown>
@@ -51,6 +52,57 @@ type OpenAIStreamWithFinal = AsyncIterable<unknown> & {
 
 function supportsArkReasoningEffort(modelId: string): boolean {
   return modelId === 'doubao-seed-1-8-251228' || modelId.startsWith('doubao-seed-2-0-')
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+function logStreamTelemetryReadFailure(params: {
+  userId: string
+  projectId?: string
+  provider: string
+  modelId: string
+  modelKey: string
+  field: string
+  error: unknown
+}) {
+  llmLogger.warn({
+    audit: false,
+    action: 'llm.stream.telemetry_read_failed',
+    message: 'failed to read stream telemetry field',
+    userId: params.userId,
+    projectId: params.projectId,
+    provider: params.provider,
+    details: {
+      model: { id: params.modelId, key: params.modelKey },
+      field: params.field,
+      error: toErrorMessage(params.error),
+    },
+  })
+}
+
+function logFinalAggregationFailure(params: {
+  userId: string
+  projectId?: string
+  provider: string
+  modelId: string
+  modelKey: string
+  error: unknown
+}) {
+  llmLogger.warn({
+    audit: false,
+    action: 'llm.stream.final_aggregation_failed',
+    message: 'stream final aggregation failed; fallback to streamed chunks',
+    userId: params.userId,
+    projectId: params.projectId,
+    provider: params.provider,
+    details: {
+      model: { id: params.modelId, key: params.modelKey },
+      error: toErrorMessage(params.error),
+    },
+  })
 }
 
 export async function chatCompletionStream(
@@ -292,8 +344,15 @@ export async function chatCompletionStream(
             }
             text = finalParts.text
           }
-        } catch {
-          // Ignore final aggregation errors and keep streamed content.
+        } catch (error: unknown) {
+          logFinalAggregationFailure({
+            userId,
+            projectId,
+            provider,
+            modelId: resolvedModelId,
+            modelKey: selection.modelKey,
+            error,
+          })
         }
       }
 
@@ -426,71 +485,149 @@ export async function chatCompletionStream(
         let sdkProviderMetadata: unknown = undefined
         let sdkResponseStatus: number | undefined
         let sdkResponseHeaders: Record<string, string> | undefined
-        try {
-          const warnResult = await Promise.resolve(aiStreamResult.warnings).catch(() => null)
-          sdkWarnings = Array.isArray(warnResult) ? warnResult : []
-        } catch { }
-        try {
-          sdkFinishReason = await Promise.resolve(aiStreamResult.finishReason).catch(() => undefined) as string | undefined
-        } catch { }
+        sdkWarnings = await readOptionalValue({
+          read: async () => {
+            const warnResult = await Promise.resolve(aiStreamResult.warnings)
+            return Array.isArray(warnResult) ? warnResult : []
+          },
+          fallback: [],
+          onError: (error: unknown) => logStreamTelemetryReadFailure({
+            userId,
+            projectId,
+            provider: providerName,
+            modelId: resolvedModelId,
+            modelKey: selection.modelKey,
+            field: 'warnings',
+            error,
+          }),
+        })
+        sdkFinishReason = await readOptionalValue({
+          read: async () => await Promise.resolve(aiStreamResult.finishReason) as string | undefined,
+          fallback: undefined,
+          onError: (error: unknown) => logStreamTelemetryReadFailure({
+            userId,
+            projectId,
+            provider: providerName,
+            modelId: resolvedModelId,
+            modelKey: selection.modelKey,
+            field: 'finishReason',
+            error,
+          }),
+        })
         // 读取 providerMetadata（Gemini safetyRatings 等关键诊断信息）
-        try {
-          sdkProviderMetadata = await Promise.resolve((aiStreamResult as unknown as { experimental_providerMetadata?: unknown }).experimental_providerMetadata).catch(() => undefined)
-        } catch { }
+        sdkProviderMetadata = await readOptionalValue({
+          read: async () => {
+            const providerMetadata = (aiStreamResult as unknown as { experimental_providerMetadata?: unknown })
+              .experimental_providerMetadata
+            return await Promise.resolve(providerMetadata)
+          },
+          fallback: undefined,
+          onError: (error: unknown) => logStreamTelemetryReadFailure({
+            userId,
+            projectId,
+            provider: providerName,
+            modelId: resolvedModelId,
+            modelKey: selection.modelKey,
+            field: 'experimental_providerMetadata',
+            error,
+          }),
+        })
         // 读取 HTTP response 状态（诊断 API 层面是否正常）
-        try {
-          const resp = await Promise.resolve(aiStreamResult.response).catch(() => null)
-          if (resp) {
-            sdkResponseStatus = (resp as { status?: number }).status
-            const hdrs = (resp as { headers?: Record<string, string> }).headers
-            if (hdrs && typeof hdrs === 'object') {
-              sdkResponseHeaders = Object.fromEntries(
-                Object.entries(hdrs).filter(([k]) => ['content-type', 'x-ratelimit-remaining-requests', 'x-request-id'].includes(k))
-              ) as Record<string, string>
-            }
+        const resp = await readOptionalValue({
+          read: async () => await Promise.resolve(aiStreamResult.response),
+          fallback: null as unknown,
+          onError: (error: unknown) => logStreamTelemetryReadFailure({
+            userId,
+            projectId,
+            provider: providerName,
+            modelId: resolvedModelId,
+            modelKey: selection.modelKey,
+            field: 'response',
+            error,
+          }),
+        })
+        if (resp) {
+          sdkResponseStatus = (resp as { status?: number }).status
+          const hdrs = (resp as { headers?: Record<string, string> }).headers
+          if (hdrs && typeof hdrs === 'object') {
+            sdkResponseHeaders = Object.fromEntries(
+              Object.entries(hdrs).filter(([k]) => ['content-type', 'x-ratelimit-remaining-requests', 'x-request-id'].includes(k))
+            ) as Record<string, string>
           }
-        } catch { }
+        }
 
         let finalReasoning = reasoning
         let finalText = text
-        try {
-          const resolvedReasoning = await aiStreamResult.reasoningText
-          if (resolvedReasoning && resolvedReasoning !== finalReasoning) {
-            const delta = resolvedReasoning.startsWith(finalReasoning)
-              ? resolvedReasoning.slice(finalReasoning.length)
-              : resolvedReasoning
-            if (delta) {
-              emitStreamChunk(callbacks, streamStep, {
-                kind: 'reasoning',
-                delta,
-                seq,
-                lane: 'reasoning',
-              })
-              seq += 1
-            }
-            finalReasoning = resolvedReasoning
+        const resolvedReasoning = await readOptionalValue({
+          read: async () => await Promise.resolve(aiStreamResult.reasoningText),
+          fallback: null as unknown,
+          onError: (error: unknown) => logStreamTelemetryReadFailure({
+            userId,
+            projectId,
+            provider: providerName,
+            modelId: resolvedModelId,
+            modelKey: selection.modelKey,
+            field: 'reasoningText',
+            error,
+          }),
+        })
+        if (typeof resolvedReasoning === 'string' && resolvedReasoning !== finalReasoning) {
+          const delta = resolvedReasoning.startsWith(finalReasoning)
+            ? resolvedReasoning.slice(finalReasoning.length)
+            : resolvedReasoning
+          if (delta) {
+            emitStreamChunk(callbacks, streamStep, {
+              kind: 'reasoning',
+              delta,
+              seq,
+              lane: 'reasoning',
+            })
+            seq += 1
           }
-        } catch { }
-        try {
-          const resolvedText = await aiStreamResult.text
-          if (resolvedText && resolvedText !== finalText) {
-            const delta = resolvedText.startsWith(finalText)
-              ? resolvedText.slice(finalText.length)
-              : resolvedText
-            if (delta) {
-              emitStreamChunk(callbacks, streamStep, {
-                kind: 'text',
-                delta,
-                seq,
-                lane: 'main',
-              })
-              seq += 1
-            }
-            finalText = resolvedText
+          finalReasoning = resolvedReasoning
+        }
+        const resolvedText = await readOptionalValue({
+          read: async () => await Promise.resolve(aiStreamResult.text),
+          fallback: null as unknown,
+          onError: (error: unknown) => logStreamTelemetryReadFailure({
+            userId,
+            projectId,
+            provider: providerName,
+            modelId: resolvedModelId,
+            modelKey: selection.modelKey,
+            field: 'text',
+            error,
+          }),
+        })
+        if (typeof resolvedText === 'string' && resolvedText !== finalText) {
+          const delta = resolvedText.startsWith(finalText)
+            ? resolvedText.slice(finalText.length)
+            : resolvedText
+          if (delta) {
+            emitStreamChunk(callbacks, streamStep, {
+              kind: 'text',
+              delta,
+              seq,
+              lane: 'main',
+            })
+            seq += 1
           }
-        } catch { }
+          finalText = resolvedText
+        }
 
-        const usage = await Promise.resolve(aiStreamResult.usage).catch(() => null)
+        const usage = await readOptionalValue({
+          read: async () => await Promise.resolve(aiStreamResult.usage),
+          fallback: null as unknown,
+          onError: (error: unknown) => logStreamTelemetryReadFailure({
+            userId,
+            projectId,
+            provider: providerName,
+            modelId: resolvedModelId,
+            modelKey: selection.modelKey,
+            field: 'usage',
+            error,
+          }),
+        })
 
         // 空响应诊断日志：当文本为空时记录详细信息并抛出可重试错误
         if (!finalText) {
@@ -654,8 +791,15 @@ export async function chatCompletionStream(
             }
             text = finalParts.text
           }
-        } catch {
-          // Ignore final aggregation errors and keep streamed content.
+        } catch (error: unknown) {
+          logFinalAggregationFailure({
+            userId,
+            projectId,
+            provider: providerName,
+            modelId: resolvedModelId,
+            modelKey: selection.modelKey,
+            error,
+          })
         }
       }
 

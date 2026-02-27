@@ -1,4 +1,4 @@
-import { logInfo as _ulogInfo } from '@/lib/logging/core'
+import { logInfo as _ulogInfo, logWarn as _ulogWarn } from '@/lib/logging/core'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { deleteCOSObject } from '@/lib/cos'
@@ -47,7 +47,10 @@ export const POST = apiHandler(async (
               _ulogInfo(`✓ Deleted: ${key}`)
               deletedCount++
             }
-          } catch { }
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error)
+            _ulogWarn(`[Cleanup Unselected] 删除角色候选图失败 appearanceId=${appearance.id} index=${i} error=${message}`)
+          }
         }
       }
 
@@ -61,7 +64,10 @@ export const POST = apiHandler(async (
           selectedIndex: 0
         }
       })
-    } catch { }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      _ulogWarn(`[Cleanup Unselected] 处理角色形象失败 appearanceId=${appearance.id} error=${message}`)
+    }
   }
 
   // 2. 清理场景的未选中图片
@@ -86,7 +92,10 @@ export const POST = apiHandler(async (
             _ulogInfo(`✓ Deleted: ${key}`)
             deletedCount++
           }
-        } catch { }
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error)
+          _ulogWarn(`[Cleanup Unselected] 删除场景候选图失败 locationId=${location.id} imageId=${img.id} error=${message}`)
+        }
 
         // 删除图片记录
         await prisma.locationImage.delete({ where: { id: img.id } })

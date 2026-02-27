@@ -67,6 +67,7 @@ const STAGE_LABELS: Record<string, string> = {
   insert_panel_persist: 'progress.stage.insertPanelPersist',
   polling_external: 'progress.stage.pollingExternal',
   enqueue_failed: 'progress.stage.enqueueFailed',
+  dismissed: 'progress.stage.dismissed',
   llm_proxy_submit: 'progress.stage.llmProxySubmit',
   llm_proxy_execute: 'progress.stage.llmProxyExecute',
   llm_proxy_persist: 'progress.stage.llmProxyPersist',
@@ -109,6 +110,9 @@ export function buildTaskProgressMessage(params: {
   }
   if (params.eventType === TASK_EVENT_TYPE.FAILED) {
     return 'progress.runtime.taskFailed'
+  }
+  if (params.eventType === TASK_EVENT_TYPE.DISMISSED) {
+    return 'progress.runtime.taskDismissed'
   }
 
   return stageLabel || 'progress.runtime.taskProcessing'

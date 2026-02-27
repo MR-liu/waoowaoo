@@ -6,11 +6,6 @@ import { requireProjectAuth, requireProjectAuthLight, isErrorResponse } from '@/
 import { apiHandler, ApiError } from '@/lib/api-errors'
 import { resolveTaskLocale } from '@/lib/task/resolve-locale'
 
-function toObject(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  return value as Record<string, unknown>
-}
-
 // 删除场景（级联删除关联的图片记录）
 export const DELETE = apiHandler(async (
   request: NextRequest,
@@ -51,7 +46,6 @@ export const POST = apiHandler(async (
 
   const body = await request.json()
   const taskLocale = resolveTaskLocale(request, body)
-  const bodyMeta = toObject((body as Record<string, unknown>).meta)
   const acceptLanguage = request.headers.get('accept-language') || ''
   const { name, description, artStyle } = body
 
@@ -109,10 +103,6 @@ export const POST = apiHandler(async (
       type: 'location',
       id: location.id,
       locale: taskLocale || undefined,
-      meta: {
-        ...bodyMeta,
-        locale: taskLocale || bodyMeta.locale || undefined,
-      },
     })
   }).catch(err => {
     _ulogError('[Location API] 后台图片生成任务触发失败:', err)

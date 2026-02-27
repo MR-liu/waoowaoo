@@ -50,23 +50,23 @@ async function fetchPanelByStoryboardIndex(storyboardId: string, panelIndex: num
 
 async function getPanelForVideoTask(job: Job<TaskJobData>) {
   const payload = (job.data.payload || {}) as AnyObj
-
-  // 优先使用 targetType=NovelPromotionPanel 直接定位
-  if (job.data.targetType === 'NovelPromotionPanel') {
-    const panel = await prisma.novelPromotionPanel.findUnique({ where: { id: job.data.targetId } })
-    if (!panel) throw new Error('Panel not found')
-    return panel
+  if (job.data.targetType !== 'NovelPromotionPanel' || !job.data.targetId) {
+    throw new Error('VIDEO_PANEL_TASK_TARGET_INVALID: targetType must be NovelPromotionPanel')
   }
+  const panel = await prisma.novelPromotionPanel.findUnique({ where: { id: job.data.targetId } })
+  if (!panel) throw new Error('Panel not found')
 
-  // 兜底：通过 storyboardId + panelIndex 定位
-  const storyboardId = payload.storyboardId
-  const panelIndex = payload.panelIndex
-  if (typeof storyboardId !== 'string' || !storyboardId || panelIndex === undefined || panelIndex === null) {
-    throw new Error('Missing storyboardId/panelIndex for video task')
+  const payloadStoryboardId = typeof payload.storyboardId === 'string' ? payload.storyboardId.trim() : ''
+  if (payloadStoryboardId && payloadStoryboardId !== panel.storyboardId) {
+    throw new Error('VIDEO_PANEL_PAYLOAD_STORYBOARD_MISMATCH: payload.storyboardId must match target panel')
   }
-
-  const panel = await fetchPanelByStoryboardIndex(storyboardId, Number(panelIndex))
-  if (!panel) throw new Error('Panel not found by storyboardId/panelIndex')
+  const payloadPanelIndex = payload.panelIndex
+  if (payloadPanelIndex !== undefined && payloadPanelIndex !== null) {
+    const parsedPanelIndex = Number(payloadPanelIndex)
+    if (!Number.isFinite(parsedPanelIndex) || Math.floor(parsedPanelIndex) !== panel.panelIndex) {
+      throw new Error('VIDEO_PANEL_PAYLOAD_PANEL_INDEX_MISMATCH: payload.panelIndex must match target panel')
+    }
+  }
   return panel
 }
 
@@ -210,20 +210,10 @@ async function handleLipSyncTask(job: Job<TaskJobData>) {
     ? payload.lipSyncModel.trim()
     : undefined
 
-  let panel: PanelRecord | null = null
-  if (job.data.targetType === 'NovelPromotionPanel') {
-    panel = await prisma.novelPromotionPanel.findUnique({ where: { id: job.data.targetId } })
+  if (job.data.targetType !== 'NovelPromotionPanel' || !job.data.targetId) {
+    throw new Error('LIP_SYNC_TASK_TARGET_INVALID: targetType must be NovelPromotionPanel')
   }
-
-  if (
-    !panel &&
-    typeof payload.storyboardId === 'string' &&
-    payload.storyboardId &&
-    payload.panelIndex !== undefined
-  ) {
-    panel = await fetchPanelByStoryboardIndex(payload.storyboardId, Number(payload.panelIndex))
-  }
-
+  const panel = await prisma.novelPromotionPanel.findUnique({ where: { id: job.data.targetId } })
   if (!panel) throw new Error('Lip-sync panel not found')
   if (!panel.videoUrl) throw new Error('Panel has no base video')
 

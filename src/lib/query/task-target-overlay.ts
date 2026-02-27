@@ -158,7 +158,8 @@ export function applyTaskLifecycleToOverlay(
 
   if (
     params.lifecycleType === TASK_EVENT_TYPE.COMPLETED ||
-    params.lifecycleType === TASK_EVENT_TYPE.FAILED
+    params.lifecycleType === TASK_EVENT_TYPE.FAILED ||
+    params.lifecycleType === TASK_EVENT_TYPE.DISMISSED
   ) {
     clearTaskTargetOverlay(queryClient, {
       projectId: params.projectId,

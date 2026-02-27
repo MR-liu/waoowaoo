@@ -11,9 +11,53 @@ import { withTaskUiPayload } from '@/lib/task/ui-payload'
 import { getProjectModelConfig, buildImageBillingPayload } from '@/lib/config-service'
 import { sanitizeImageInputsForTaskPayload } from '@/lib/media/outbound-image'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function toTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function toInteger(value: unknown): number | null {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return null
+  return Math.floor(parsed)
+}
+
 function toObject(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  return value as Record<string, unknown>
+  return isRecord(value) ? value : {}
+}
+
+function buildModifyStoryboardTaskPayload(input: {
+  body: unknown
+  panelId: string
+  panelIndex: number
+  extraImageUrls: string[]
+  selectedAssets: Array<Record<string, unknown>>
+  extraImageIssues: Array<Record<string, unknown>>
+  selectedAssetIssues: Array<Record<string, unknown>>
+}): Record<string, unknown> {
+  const body = isRecord(input.body) ? input.body : {}
+  const storyboardId = toTrimmedString(body.storyboardId)
+  const modifyPrompt = toTrimmedString(body.modifyPrompt)
+
+  return {
+    type: 'storyboard',
+    panelId: input.panelId,
+    panelIndex: input.panelIndex,
+    ...(storyboardId ? { storyboardId } : {}),
+    ...(modifyPrompt ? { modifyPrompt } : {}),
+    extraImageUrls: input.extraImageUrls,
+    selectedAssets: input.selectedAssets,
+    meta: {
+      ...toObject(body.meta),
+      outboundImageInputAudit: {
+        extraImageUrls: input.extraImageIssues,
+        selectedAssets: input.selectedAssetIssues,
+      },
+    },
+  }
 }
 
 export const POST = apiHandler(async (
@@ -28,11 +72,11 @@ export const POST = apiHandler(async (
 
   const body = await request.json()
   const locale = resolveRequiredTaskLocale(request, body)
-  const storyboardId = typeof body?.storyboardId === 'string' ? body.storyboardId : ''
-  const panelIndex = Number(body?.panelIndex)
-  const modifyPrompt = typeof body?.modifyPrompt === 'string' ? body.modifyPrompt.trim() : ''
+  const storyboardId = isRecord(body) ? toTrimmedString(body.storyboardId) : ''
+  const panelIndex = isRecord(body) ? toInteger(body.panelIndex) : null
+  const modifyPrompt = isRecord(body) ? toTrimmedString(body.modifyPrompt) : ''
 
-  if (!storyboardId || !Number.isFinite(panelIndex) || !modifyPrompt) {
+  if (!storyboardId || panelIndex === null || !modifyPrompt) {
     throw new ApiError('INVALID_PARAMS')
   }
 
@@ -50,13 +94,15 @@ export const POST = apiHandler(async (
   }
 
   const extraImageAudit = sanitizeImageInputsForTaskPayload(
-    Array.isArray(body?.extraImageUrls) ? body.extraImageUrls : [],
+    isRecord(body) && Array.isArray(body.extraImageUrls) ? body.extraImageUrls : [],
   )
-  const selectedAssetsRaw = Array.isArray(body?.selectedAssets) ? body.selectedAssets : []
+  const selectedAssetsRaw = isRecord(body) && Array.isArray(body.selectedAssets) ? body.selectedAssets : []
   const selectedAssetIssues: Array<Record<string, unknown>> = []
-  const normalizedSelectedAssets = selectedAssetsRaw.map((asset: unknown, assetIndex: number) => {
-    if (!asset || typeof asset !== 'object') return asset
-    const imageUrl = (asset as Record<string, unknown>).imageUrl
+  const normalizedSelectedAssets: Array<Record<string, unknown>> = []
+  for (let assetIndex = 0; assetIndex < selectedAssetsRaw.length; assetIndex++) {
+    const asset = selectedAssetsRaw[assetIndex]
+    if (!isRecord(asset)) continue
+    const imageUrl = asset.imageUrl
     const audit = sanitizeImageInputsForTaskPayload([imageUrl])
     for (const issue of audit.issues) {
       selectedAssetIssues.push({
@@ -64,13 +110,17 @@ export const POST = apiHandler(async (
         ...issue
       })
     }
+    const normalizedAsset: Record<string, unknown> = {}
+    const assetId = toTrimmedString(asset.id)
+    const assetType = toTrimmedString(asset.type)
     const normalizedUrl = audit.normalized[0]
-    if (!normalizedUrl) return asset
-    return {
-      ...toObject(asset),
-      imageUrl: normalizedUrl
+    if (assetId) normalizedAsset.id = assetId
+    if (assetType) normalizedAsset.type = assetType
+    if (normalizedUrl) normalizedAsset.imageUrl = normalizedUrl
+    if (Object.keys(normalizedAsset).length > 0) {
+      normalizedSelectedAssets.push(normalizedAsset)
     }
-  })
+  }
 
   const rejectedRelativePathCount = [
     ...extraImageAudit.issues,
@@ -80,21 +130,15 @@ export const POST = apiHandler(async (
     throw new ApiError('INVALID_PARAMS')
   }
 
-  const payload = {
-    ...body,
-    type: 'storyboard',
+  const payload = buildModifyStoryboardTaskPayload({
+    body,
     panelId: panel.id,
     panelIndex,
     extraImageUrls: extraImageAudit.normalized,
     selectedAssets: normalizedSelectedAssets,
-    meta: {
-      ...toObject(body?.meta),
-      outboundImageInputAudit: {
-        extraImageUrls: extraImageAudit.issues,
-        selectedAssets: selectedAssetIssues
-      }
-    }
-  }
+    extraImageIssues: extraImageAudit.issues,
+    selectedAssetIssues,
+  })
   const hasOutputAtStart = await hasPanelImageOutput(panel.id)
 
   const projectModelConfig = await getProjectModelConfig(projectId, session.user.id)

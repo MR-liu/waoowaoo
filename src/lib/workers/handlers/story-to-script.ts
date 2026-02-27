@@ -33,17 +33,25 @@ function isReasoningEffort(value: unknown): value is 'minimal' | 'low' | 'medium
 export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
   const payload = (job.data.payload || {}) as AnyObj
   const projectId = job.data.projectId
-  const episodeIdRaw = asString(payload.episodeId || job.data.episodeId || '')
-  const episodeId = episodeIdRaw.trim()
-  const contentRaw = asString(payload.content)
+  const payloadEpisodeId = asString(payload.episodeId).trim()
+  if (!payloadEpisodeId) {
+    throw new Error('TASK_PAYLOAD_EPISODE_ID_REQUIRED: payload.episodeId is required')
+  }
+  if (job.data.episodeId && payloadEpisodeId !== job.data.episodeId) {
+    throw new Error('TASK_PAYLOAD_EPISODE_ID_MISMATCH: payload.episodeId must equal job.episodeId')
+  }
+  if (job.data.targetType === 'NovelPromotionEpisode' && payloadEpisodeId !== job.data.targetId) {
+    throw new Error('TASK_PAYLOAD_TARGET_MISMATCH: payload.episodeId must equal task.targetId')
+  }
+  const episodeId = payloadEpisodeId
+  const content = asString(payload.content).trim()
+  if (!content) {
+    throw new Error('TASK_PAYLOAD_CONTENT_REQUIRED: payload.content is required')
+  }
   const inputModel = asString(payload.model).trim()
   const reasoning = payload.reasoning !== false
   const requestedReasoningEffort = parseEffort(payload.reasoningEffort)
   const temperature = parseTemperature(payload.temperature)
-
-  if (!episodeId) {
-    throw new Error('episodeId is required')
-  }
 
   const project = await prisma.project.findUnique({
     where: { id: projectId },
@@ -100,12 +108,8 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
   const reasoningEffort = requestedReasoningEffort
     || (isReasoningEffort(capabilityReasoningEffort) ? capabilityReasoningEffort : 'high')
 
-  const mergedContent = contentRaw.trim() || (episode.novelText || '')
-  if (!mergedContent.trim()) {
-    throw new Error('content is required')
-  }
   const maxLength = 30000
-  const content = mergedContent.length > maxLength ? mergedContent.slice(0, maxLength) : mergedContent
+  const normalizedContent = content.length > maxLength ? content.slice(0, maxLength) : content
 
   await reportTaskProgress(job, 10, {
     stage: 'story_to_script_prepare',
@@ -194,7 +198,7 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
         callbacks,
         async () =>
           await runStoryToScriptOrchestrator({
-            content,
+            content: normalizedContent,
             baseCharacters: (novelData.characters || []).map((item) => item.name),
             baseLocations: (novelData.locations || []).map((item) => item.name),
             baseCharacterIntroductions: (novelData.characters || []).map((item) => ({

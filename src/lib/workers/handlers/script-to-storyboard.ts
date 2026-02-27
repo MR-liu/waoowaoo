@@ -38,16 +38,21 @@ function isReasoningEffort(value: unknown): value is 'minimal' | 'low' | 'medium
 export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
   const payload = (job.data.payload || {}) as AnyObj
   const projectId = job.data.projectId
-  const episodeIdRaw = typeof payload.episodeId === 'string' ? payload.episodeId : (job.data.episodeId || '')
-  const episodeId = episodeIdRaw.trim()
+  const payloadEpisodeId = typeof payload.episodeId === 'string' ? payload.episodeId.trim() : ''
+  if (!payloadEpisodeId) {
+    throw new Error('TASK_PAYLOAD_EPISODE_ID_REQUIRED: payload.episodeId is required')
+  }
+  if (job.data.episodeId && payloadEpisodeId !== job.data.episodeId) {
+    throw new Error('TASK_PAYLOAD_EPISODE_ID_MISMATCH: payload.episodeId must equal job.episodeId')
+  }
+  if (job.data.targetType === 'NovelPromotionEpisode' && payloadEpisodeId !== job.data.targetId) {
+    throw new Error('TASK_PAYLOAD_TARGET_MISMATCH: payload.episodeId must equal task.targetId')
+  }
+  const episodeId = payloadEpisodeId
   const inputModel = typeof payload.model === 'string' ? payload.model.trim() : ''
   const reasoning = payload.reasoning !== false
   const requestedReasoningEffort = parseEffort(payload.reasoningEffort)
   const temperature = parseTemperature(payload.temperature)
-
-  if (!episodeId) {
-    throw new Error('episodeId is required')
-  }
 
   const project = await prisma.project.findUnique({
     where: { id: projectId },

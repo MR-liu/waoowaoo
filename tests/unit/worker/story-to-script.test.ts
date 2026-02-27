@@ -133,9 +133,14 @@ describe('worker story-to-script behavior', () => {
     })
   })
 
-  it('missing episodeId -> explicit error', async () => {
+  it('missing payload.episodeId -> explicit error', async () => {
     const job = buildJob({}, null)
-    await expect(handleStoryToScriptTask(job)).rejects.toThrow('episodeId is required')
+    await expect(handleStoryToScriptTask(job)).rejects.toThrow('TASK_PAYLOAD_EPISODE_ID_REQUIRED')
+  })
+
+  it('payload.episodeId mismatch job episode -> explicit error', async () => {
+    const job = buildJob({ episodeId: 'episode-2', content: 'input content' })
+    await expect(handleStoryToScriptTask(job)).rejects.toThrow('TASK_PAYLOAD_EPISODE_ID_MISMATCH')
   })
 
   it('success path -> persists clips and screenplay with concrete fields', async () => {
@@ -156,6 +161,10 @@ describe('worker story-to-script behavior', () => {
       episodeId: 'episode-1',
       clipList: [{ clipId: 'clip-1', content: 'clip content' }],
     })
+    expect(orchestratorMock.runStoryToScriptOrchestrator).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'input content',
+      runStep: expect.any(Function),
+    }))
 
     expect(prismaMock.novelPromotionClip.update).toHaveBeenCalledWith({
       where: { id: 'clip-row-1' },
@@ -163,6 +172,14 @@ describe('worker story-to-script behavior', () => {
         screenplay: JSON.stringify({ scenes: [{ shot: 'close-up' }] }),
       },
     })
+
+    const progressStages = workerMock.reportTaskProgress.mock.calls
+      .map((call) => (call[2] as { stage?: unknown } | undefined)?.stage)
+      .filter((stage): stage is string => typeof stage === 'string')
+    expect(progressStages).toContain('story_to_script_prepare')
+    expect(progressStages).toContain('story_to_script_persist')
+    expect(progressStages).toContain('story_to_script_persist_done')
+    expect(workerMock.assertTaskActive).toHaveBeenCalledWith(job, 'story_to_script_persist')
   })
 
   it('orchestrator partial failure summary -> throws explicit error', async () => {

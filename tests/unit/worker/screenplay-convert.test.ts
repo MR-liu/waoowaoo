@@ -107,7 +107,13 @@ describe('worker screenplay-convert behavior', () => {
   })
 
   it('success path -> writes screenplay json to clip row', async () => {
-    const job = buildJob({ episodeId: 'episode-1' })
+    const job = buildJob({
+      episodeId: 'episode-1',
+      model: 'llm::analysis-runtime',
+      reasoning: false,
+      reasoningEffort: 'high',
+      temperature: 0.55,
+    })
     const result = await handleScreenplayConvertTask(job)
 
     expect(result).toEqual(expect.objectContaining({
@@ -117,6 +123,18 @@ describe('worker screenplay-convert behavior', () => {
       failCount: 0,
       totalScenes: 1,
     }))
+    expect(llmMock.chatCompletion).toHaveBeenCalledWith(
+      'user-1',
+      'llm::analysis-runtime',
+      [{ role: 'user', content: expect.stringContaining('clip 1 content') }],
+      expect.objectContaining({
+        reasoning: false,
+        reasoningEffort: 'high',
+        temperature: 0.55,
+        projectId: 'project-1',
+        action: 'screenplay_conversion',
+      }),
+    )
 
     expect(prismaMock.novelPromotionClip.update).toHaveBeenCalledWith({
       where: { id: 'clip-1' },
@@ -137,5 +155,16 @@ describe('worker screenplay-convert behavior', () => {
 
     const job = buildJob({ episodeId: 'episode-1' })
     await expect(handleScreenplayConvertTask(job)).rejects.toThrow('SCREENPLAY_CONVERT_PARTIAL_FAILED')
+  })
+
+  it('invalid runtime options in payload -> explicit error', async () => {
+    const job = buildJob({
+      episodeId: 'episode-1',
+      reasoningEffort: 'ultra',
+    })
+    await expect(handleScreenplayConvertTask(job)).rejects.toThrow(
+      'INVALID_RUNTIME_OPTIONS: reasoningEffort must be one of: minimal, low, medium, high',
+    )
+    expect(llmMock.chatCompletion).not.toHaveBeenCalled()
   })
 })

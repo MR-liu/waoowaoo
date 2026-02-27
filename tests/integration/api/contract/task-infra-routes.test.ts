@@ -27,7 +27,7 @@ const authState = vi.hoisted<AuthState>(() => ({
 }))
 
 const queryTasksMock = vi.hoisted(() => vi.fn())
-const dismissFailedTasksMock = vi.hoisted(() => vi.fn())
+const dismissFailedTasksWithDetailsMock = vi.hoisted(() => vi.fn())
 const getTaskByIdMock = vi.hoisted(() => vi.fn())
 const cancelTaskMock = vi.hoisted(() => vi.fn())
 const removeTaskJobMock = vi.hoisted(() => vi.fn(async () => true))
@@ -65,7 +65,7 @@ vi.mock('@/lib/api-auth', () => {
 
 vi.mock('@/lib/task/service', () => ({
   queryTasks: queryTasksMock,
-  dismissFailedTasks: dismissFailedTasksMock,
+  dismissFailedTasksWithDetails: dismissFailedTasksWithDetailsMock,
   getTaskById: getTaskByIdMock,
   cancelTask: cancelTaskMock,
 }))
@@ -122,7 +122,22 @@ describe('api contract - task infra routes (behavior)', () => {
     subscriberState.listener = null
 
     queryTasksMock.mockResolvedValue([baseTask])
-    dismissFailedTasksMock.mockResolvedValue(1)
+    dismissFailedTasksWithDetailsMock.mockResolvedValue([
+      {
+        id: 'task-1',
+        userId: 'user-1',
+        projectId: 'project-1',
+        type: 'IMAGE_CHARACTER',
+        targetType: 'CharacterAppearance',
+        targetId: 'appearance-1',
+        episodeId: null,
+        payload: {
+          flowId: 'single:image_character',
+          flowStageIndex: 1,
+          flowStageTotal: 1,
+        },
+      },
+    ])
     getTaskByIdMock.mockResolvedValue(baseTask)
     cancelTaskMock.mockResolvedValue({
       task: {
@@ -203,7 +218,15 @@ describe('api contract - task infra routes (behavior)', () => {
     const payload = await res.json() as { success: boolean; dismissed: number }
     expect(payload.success).toBe(true)
     expect(payload.dismissed).toBe(1)
-    expect(dismissFailedTasksMock).toHaveBeenCalledWith(['task-1', 'task-2'], 'user-1')
+    expect(dismissFailedTasksWithDetailsMock).toHaveBeenCalledWith(['task-1', 'task-2'], 'user-1')
+    expect(publishTaskEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'task-1',
+      type: 'task.dismissed',
+      payload: expect.objectContaining({
+        dismissed: true,
+        stage: 'dismissed',
+      }),
+    }))
   })
 
   it('POST /api/task-target-states: validates payload and returns queried states', async () => {
@@ -331,6 +354,24 @@ describe('api contract - task infra routes (behavior)', () => {
     }))
   })
 
+  it('DELETE /api/tasks/[taskId]: queue cleanup failure is explicit in cancelled event payload', async () => {
+    const { DELETE } = await import('@/app/api/tasks/[taskId]/route')
+    removeTaskJobMock.mockRejectedValueOnce(new Error('redis down'))
+
+    const req = buildMockRequest({ path: '/api/tasks/task-1', method: 'DELETE' })
+    const res = await DELETE(req, { params: Promise.resolve({ taskId: 'task-1' }) } as RouteContext)
+    expect(res.status).toBe(200)
+
+    expect(publishTaskEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'task-1',
+      payload: expect.objectContaining({
+        cancelled: true,
+        queueCleanupFailed: true,
+        queueCleanupError: 'redis down',
+      }),
+    }))
+  })
+
   it('GET /api/sse: missing projectId -> 400; unauthenticated with projectId -> 401', async () => {
     const { GET } = await import('@/app/api/sse/route')
 
@@ -377,7 +418,7 @@ describe('api contract - task infra routes (behavior)', () => {
 
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/event-stream')
-    expect(listEventsAfterMock).toHaveBeenCalledWith('project-1', 3, 5000)
+    expect(listEventsAfterMock).toHaveBeenCalledWith('project-1', 3, 5000, { userId: 'user-1' })
     expect(addChannelListenerMock).toHaveBeenCalledWith('project:project-1', expect.any(Function))
 
     const reader = res.body?.getReader()
@@ -386,6 +427,159 @@ describe('api contract - task infra routes (behavior)', () => {
     expect(firstChunk.done).toBe(false)
     const decoded = new TextDecoder().decode(firstChunk.value)
     expect(decoded).toContain('event:')
+    await reader!.cancel()
+  })
+
+  it('GET /api/sse: dedupes replay-live overlap events by id', async () => {
+    const { GET } = await import('@/app/api/sse/route')
+
+    const replayEvent = {
+      id: '4',
+      type: 'task.lifecycle',
+      taskId: 'task-1',
+      projectId: 'project-1',
+      userId: 'user-1',
+      ts: new Date().toISOString(),
+      taskType: 'IMAGE_CHARACTER',
+      targetType: 'CharacterAppearance',
+      targetId: 'appearance-1',
+      episodeId: null,
+      payload: { lifecycleType: 'task.created' },
+    }
+    const liveNextEvent = {
+      id: '5',
+      type: 'task.lifecycle',
+      taskId: 'task-1',
+      projectId: 'project-1',
+      userId: 'user-1',
+      ts: new Date().toISOString(),
+      taskType: 'IMAGE_CHARACTER',
+      targetType: 'CharacterAppearance',
+      targetId: 'appearance-1',
+      episodeId: null,
+      payload: { lifecycleType: 'task.processing' },
+    }
+
+    listEventsAfterMock.mockImplementationOnce(async () => {
+      subscriberState.listener?.(JSON.stringify(replayEvent))
+      subscriberState.listener?.(JSON.stringify(liveNextEvent))
+      return [replayEvent]
+    })
+
+    const req = buildMockRequest({
+      path: '/api/sse',
+      method: 'GET',
+      query: { projectId: 'project-1' },
+      headers: { 'last-event-id': '3' },
+    })
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const reader = res.body?.getReader()
+    expect(reader).toBeTruthy()
+    const decoder = new TextDecoder()
+    let decoded = ''
+    for (let i = 0; i < 3; i++) {
+      const chunk = await Promise.race([
+        reader!.read(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 40)),
+      ])
+      if (chunk === null) break
+      if (chunk.done) break
+      decoded += decoder.decode(chunk.value)
+      if (decoded.includes('"id":"5"')) break
+    }
+    expect(decoded.length).toBeGreaterThan(0)
+    expect((decoded.match(/"id":"4"/g) || []).length).toBe(1)
+    expect((decoded.match(/"id":"5"/g) || []).length).toBe(1)
+    await reader!.cancel()
+  })
+
+  it('GET /api/sse: dedupes replay-live overlap events by semantic key when ids differ', async () => {
+    const { GET } = await import('@/app/api/sse/route')
+
+    const replayEvent = {
+      id: '14',
+      type: 'task.lifecycle',
+      taskId: 'task-1',
+      projectId: 'project-1',
+      userId: 'user-1',
+      ts: new Date('2026-02-27T00:00:10.000Z').toISOString(),
+      taskType: 'IMAGE_CHARACTER',
+      targetType: 'CharacterAppearance',
+      targetId: 'appearance-1',
+      episodeId: null,
+      payload: {
+        lifecycleType: 'task.processing',
+        stage: 'generate_character_image',
+        stepId: 'appearance_1',
+        flowStageIndex: 1,
+        flowStageTotal: 1,
+        progress: 55,
+      },
+    }
+    const liveDuplicateWithDifferentId = {
+      ...replayEvent,
+      id: 'ephemeral:dup-14',
+      ts: new Date('2026-02-27T00:00:10.100Z').toISOString(),
+    }
+    const liveTerminal = {
+      id: '15',
+      type: 'task.lifecycle',
+      taskId: 'task-1',
+      projectId: 'project-1',
+      userId: 'user-1',
+      ts: new Date('2026-02-27T00:00:11.000Z').toISOString(),
+      taskType: 'IMAGE_CHARACTER',
+      targetType: 'CharacterAppearance',
+      targetId: 'appearance-1',
+      episodeId: null,
+      payload: {
+        lifecycleType: 'task.completed',
+        stage: 'done',
+        flowStageIndex: 1,
+        flowStageTotal: 1,
+        progress: 100,
+      },
+    }
+
+    listEventsAfterMock.mockImplementationOnce(async () => {
+      subscriberState.listener?.(JSON.stringify(liveDuplicateWithDifferentId))
+      subscriberState.listener?.(JSON.stringify(liveTerminal))
+      return [replayEvent]
+    })
+
+    const req = buildMockRequest({
+      path: '/api/sse',
+      method: 'GET',
+      query: { projectId: 'project-1' },
+      headers: { 'last-event-id': '13' },
+    })
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const reader = res.body?.getReader()
+    expect(reader).toBeTruthy()
+    const decoder = new TextDecoder()
+    let decoded = ''
+    for (let i = 0; i < 3; i++) {
+      const chunk = await Promise.race([
+        reader!.read(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 40)),
+      ])
+      if (chunk === null) break
+      if (chunk.done) break
+      decoded += decoder.decode(chunk.value)
+      if (decoded.includes('"id":"15"')) break
+    }
+
+    expect((decoded.match(/"lifecycleType":"task.processing"/g) || []).length).toBe(1)
+    expect((decoded.match(/"lifecycleType":"task.completed"/g) || []).length).toBe(1)
+    expect(decoded).not.toContain('"id":"ephemeral:dup-14"')
     await reader!.cancel()
   })
 
@@ -431,6 +625,19 @@ describe('api contract - task infra routes (behavior)', () => {
       episodeId: null,
       payload: { lifecycleType: 'completed', progress: 100 },
     }))
+    listener!(JSON.stringify({
+      id: '13',
+      type: 'task.lifecycle',
+      taskId: 'task-2',
+      projectId: 'project-1',
+      userId: 'other-user',
+      ts: new Date().toISOString(),
+      taskType: 'IMAGE_CHARACTER',
+      targetType: 'CharacterAppearance',
+      targetId: 'appearance-2',
+      episodeId: null,
+      payload: { lifecycleType: 'processing', progress: 30 },
+    }))
 
     const reader = res.body?.getReader()
     expect(reader).toBeTruthy()
@@ -441,6 +648,7 @@ describe('api contract - task infra routes (behavior)', () => {
     expect(merged).toContain('"lifecycleType":"processing"')
     expect(merged).toContain('"lifecycleType":"completed"')
     expect(merged).toContain('"taskId":"task-1"')
+    expect(merged).not.toContain('"taskId":"task-2"')
     await reader!.cancel()
   })
 })

@@ -7,6 +7,30 @@ import { TASK_TYPE } from '@/lib/task/types'
 import { buildDefaultTaskBillingInfo } from '@/lib/billing'
 import { getProjectModelConfig } from '@/lib/config-service'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function toTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function buildInsertPanelTaskPayload(input: unknown): Record<string, unknown> {
+  if (!isRecord(input)) return {}
+
+  const storyboardId = toTrimmedString(input.storyboardId)
+  const insertAfterPanelId = toTrimmedString(input.insertAfterPanelId)
+  const userInputRaw = toTrimmedString(input.userInput)
+  const promptRaw = toTrimmedString(input.prompt)
+  const userInput = userInputRaw || promptRaw
+
+  return {
+    ...(storyboardId ? { storyboardId } : {}),
+    ...(insertAfterPanelId ? { insertAfterPanelId } : {}),
+    ...(userInput ? { userInput } : {}),
+  }
+}
+
 export const POST = apiHandler(async (
   request: NextRequest,
   context: { params: Promise<{ projectId: string }> },
@@ -18,17 +42,22 @@ export const POST = apiHandler(async (
   const { session } = authResult
 
   const body = await request.json()
+  const taskPayload = buildInsertPanelTaskPayload(body)
   const locale = resolveRequiredTaskLocale(request, body)
-  const storyboardId = body?.storyboardId
-  const insertAfterPanelId = body?.insertAfterPanelId
+  const storyboardId = typeof taskPayload.storyboardId === 'string' ? taskPayload.storyboardId : ''
+  const insertAfterPanelId = typeof taskPayload.insertAfterPanelId === 'string' ? taskPayload.insertAfterPanelId : ''
+  const userInput = typeof taskPayload.userInput === 'string' ? taskPayload.userInput : ''
 
-  if (!storyboardId || !insertAfterPanelId) {
+  if (!storyboardId || !insertAfterPanelId || !userInput) {
     throw new ApiError('INVALID_PARAMS', {
     })
   }
 
   const projectModelConfig = await getProjectModelConfig(projectId, session.user.id)
-  const billingPayload = { ...body, ...(projectModelConfig.analysisModel ? { analysisModel: projectModelConfig.analysisModel } : {}) }
+  const billingPayload = {
+    ...taskPayload,
+    ...(projectModelConfig.analysisModel ? { analysisModel: projectModelConfig.analysisModel } : {}),
+  }
 
   const result = await submitTask({
     userId: session.user.id,

@@ -1,24 +1,71 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { createScopedLogger } from '@/lib/logging/core'
 import { withPrismaRetry } from '@/lib/prisma-retry'
 import { rollbackTaskBilling } from '@/lib/billing'
 import { locales } from '@/i18n/routing'
 import { TASK_STATUS, type CreateTaskInput, type TaskBillingInfo, type TaskStatus } from './types'
+import { recordTaskTransitionDenied } from './metrics'
 
 const ACTIVE_STATUSES: TaskStatus[] = [TASK_STATUS.QUEUED, TASK_STATUS.PROCESSING]
+const TERMINAL_STATUSES: TaskStatus[] = [TASK_STATUS.COMPLETED, TASK_STATUS.FAILED, TASK_STATUS.DISMISSED]
 const taskModel = prisma.task
+const serviceLogger = createScopedLogger({ module: 'task.service' })
+const STATUS_SOURCES = {
+  enqueueMeta: [TASK_STATUS.QUEUED] as const,
+  processing: [TASK_STATUS.QUEUED, TASK_STATUS.PROCESSING] as const,
+  externalId: [TASK_STATUS.PROCESSING] as const,
+  progress: [TASK_STATUS.PROCESSING] as const,
+  completed: [TASK_STATUS.PROCESSING] as const,
+  failed: [TASK_STATUS.QUEUED, TASK_STATUS.PROCESSING] as const,
+  heartbeat: [TASK_STATUS.PROCESSING] as const,
+}
+export type ActiveTaskFailureSource =
+  | 'task_locale_missing'
+  | 'dedupe_orphan'
+  | 'reconcile_orphan'
+
+function assertStatusSourcesDoNotIncludeTerminalStates() {
+  const terminal = new Set<TaskStatus>(TERMINAL_STATUSES)
+  for (const [sourceName, sourceStatuses] of Object.entries(STATUS_SOURCES) as Array<
+    [keyof typeof STATUS_SOURCES, readonly TaskStatus[]]
+  >) {
+    const invalid = sourceStatuses.filter((status) => terminal.has(status))
+    if (invalid.length > 0) {
+      throw new Error(`TASK_STATUS_SOURCE_INVALID:${sourceName}:${invalid.join(',')}`)
+    }
+  }
+}
+
+assertStatusSourcesDoNotIncludeTerminalStates()
 
 /**
  * 校验 BullMQ Job 是否仍然活着。
- * 检查失败时（如 Redis 不可用）安全降级为 true，不阻塞正常创建流程。
+ * 若检查失败（如 Redis 不可用），必须显式失败并上报，不允许静默降级。
  */
 async function verifyJobAlive(taskId: string): Promise<boolean> {
   try {
     const { isJobAlive } = await import('./reconcile')
     return await isJobAlive(taskId)
-  } catch {
-    // Redis 异常等不可控情况 → 降级信任 DB 状态
-    return true
+  } catch (error) {
+    serviceLogger.error({
+      action: 'task.verify_job_alive.failed',
+      message: 'failed to verify BullMQ job liveness',
+      taskId,
+      errorCode: 'RECONCILE_CHECK_FAILED',
+      retryable: true,
+      error:
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
+          : {
+              message: String(error),
+            },
+    })
+    throw new Error('RECONCILE_CHECK_FAILED')
   }
 }
 
@@ -99,6 +146,105 @@ function resolveCompensationFailure(
   }
 }
 
+async function releaseTerminalTaskDedupeKey(taskId: string) {
+  const result = await taskModel.updateMany({
+    where: {
+      id: taskId,
+      status: { in: [...TERMINAL_STATUSES] },
+      dedupeKey: { not: null },
+    },
+    data: {
+      dedupeKey: null,
+    },
+  })
+  return result.count > 0
+}
+
+export async function failActiveTaskWithDedupeRelease(params: {
+  taskId: string
+  errorCode: string
+  errorMessage: string
+  source: ActiveTaskFailureSource
+}) {
+  const updated = await taskModel.updateMany({
+    where: taskWhereBySources(params.taskId, STATUS_SOURCES.failed),
+    data: {
+      status: TASK_STATUS.FAILED,
+      errorCode: params.errorCode.slice(0, 80),
+      errorMessage: params.errorMessage.slice(0, 2000),
+      finishedAt: new Date(),
+      heartbeatAt: null,
+      dedupeKey: null,
+    },
+  })
+  if (updated.count > 0) return true
+
+  const snapshot = await taskModel.findUnique({
+    where: { id: params.taskId },
+    select: {
+      status: true,
+      dedupeKey: true,
+    },
+  })
+  if (!snapshot) {
+    recordTaskTransitionDenied({
+      taskId: params.taskId,
+      source: params.source,
+      expectedStatuses: STATUS_SOURCES.failed,
+      currentStatus: null,
+      reason: 'task_missing',
+    })
+    serviceLogger.warn({
+      action: 'task.transition.denied.missing',
+      message: 'task not found when failing active task',
+      taskId: params.taskId,
+      source: params.source,
+      expectedStatuses: STATUS_SOURCES.failed,
+    })
+    return false
+  }
+
+  if (
+    isTerminalTaskStatus(snapshot.status)
+    && typeof snapshot.dedupeKey === 'string'
+    && snapshot.dedupeKey.trim()
+  ) {
+    const released = await releaseTerminalTaskDedupeKey(params.taskId)
+    if (released) {
+      serviceLogger.info({
+        action: 'task.dedupe.release_terminal',
+        message: 'released dedupeKey on terminal task after transition race',
+        taskId: params.taskId,
+        source: params.source,
+        currentStatus: snapshot.status,
+      })
+    }
+  }
+
+  recordTaskTransitionDenied({
+    taskId: params.taskId,
+    source: params.source,
+    expectedStatuses: STATUS_SOURCES.failed,
+    currentStatus: snapshot.status,
+    reason: 'status_mismatch',
+  })
+  serviceLogger.warn({
+    action: 'task.transition.denied',
+    message: 'failed to apply active->failed transition due to status mismatch',
+    taskId: params.taskId,
+    source: params.source,
+    expectedStatuses: STATUS_SOURCES.failed,
+    currentStatus: snapshot.status,
+  })
+  return false
+}
+
+function isTerminalTaskStatus(status: string): status is TaskStatus {
+  return status === TASK_STATUS.COMPLETED
+    || status === TASK_STATUS.FAILED
+    || status === TASK_STATUS.DISMISSED
+}
+
 async function failTaskWithMissingLocale(task: {
   id: string
   billingInfo: unknown
@@ -112,17 +258,11 @@ async function failTaskWithMissingLocale(task: {
     'TASK_LOCALE_REQUIRED',
     'task locale is missing',
   )
-
-  await taskModel.update({
-    where: { id: task.id },
-    data: {
-      status: TASK_STATUS.FAILED,
-      errorCode: failure.errorCode,
-      errorMessage: failure.errorMessage,
-      finishedAt: new Date(),
-      heartbeatAt: null,
-      dedupeKey: null,
-    },
+  await failActiveTaskWithDedupeRelease({
+    taskId: task.id,
+    errorCode: failure.errorCode,
+    errorMessage: failure.errorMessage,
+    source: 'task_locale_missing',
   })
 }
 
@@ -194,24 +334,16 @@ export async function createTask(input: CreateTaskInput) {
           )
 
           // Job 已死（terminal / missing）→ 终止孤儿任务，释放 dedupeKey，继续创建新任务
-          await model.update({
-            where: { id: existing.id },
-            data: {
-              status: TASK_STATUS.FAILED,
-              errorCode: failure.errorCode,
-              errorMessage: failure.errorMessage,
-              finishedAt: new Date(),
-              heartbeatAt: null,
-              dedupeKey: null,
-            },
+          await failActiveTaskWithDedupeRelease({
+            taskId: existing.id,
+            errorCode: failure.errorCode,
+            errorMessage: failure.errorMessage,
+            source: 'dedupe_orphan',
           })
         }
       } else {
         // dedupeKey is unique in DB. Release terminal-task key so a new task can be created.
-        await model.update({
-          where: { id: existing.id },
-          data: { dedupeKey: null },
-        })
+        await releaseTerminalTaskDedupeKey(existing.id)
       }
     }
   }
@@ -265,23 +397,15 @@ export async function createTask(input: CreateTaskInput) {
               'Queue job lost, replaced by new task',
             )
 
-            await model.update({
-              where: { id: collided.id },
-              data: {
-                status: TASK_STATUS.FAILED,
-                errorCode: failure.errorCode,
-                errorMessage: failure.errorMessage,
-                finishedAt: new Date(),
-                heartbeatAt: null,
-                dedupeKey: null,
-              },
+            await failActiveTaskWithDedupeRelease({
+              taskId: collided.id,
+              errorCode: failure.errorCode,
+              errorMessage: failure.errorMessage,
+              source: 'dedupe_orphan',
             })
           }
         } else {
-          await model.update({
-            where: { id: collided.id },
-            data: { dedupeKey: null },
-          })
+          await releaseTerminalTaskDedupeKey(collided.id)
         }
 
         const task = await model.create({ data: createData })
@@ -335,23 +459,53 @@ export async function getActiveTasksForTarget(params: {
 }
 
 export async function markTaskEnqueueFailed(taskId: string, error: string) {
-  return await taskModel.update({
-    where: { id: taskId },
+  const updated = await taskModel.updateMany({
+    where: taskWhereBySources(taskId, STATUS_SOURCES.enqueueMeta),
     data: {
       enqueueAttempts: { increment: 1 },
       lastEnqueueError: error.slice(0, 500),
     },
   })
+  if (updated.count <= 0) {
+    await logStatusTransitionDenied({
+      taskId,
+      source: 'enqueueMeta',
+      details: { operation: 'markTaskEnqueueFailed' },
+    })
+  }
+  return updated.count > 0
+}
+
+export async function resetProcessingTasksToQueuedOnStartup() {
+  const result = await taskModel.updateMany({
+    where: {
+      status: TASK_STATUS.PROCESSING,
+    },
+    data: {
+      status: TASK_STATUS.QUEUED,
+      startedAt: null,
+      heartbeatAt: null,
+    },
+  })
+  return result.count
 }
 
 export async function markTaskEnqueued(taskId: string) {
-  return await taskModel.update({
-    where: { id: taskId },
+  const updated = await taskModel.updateMany({
+    where: taskWhereBySources(taskId, STATUS_SOURCES.enqueueMeta),
     data: {
       enqueuedAt: new Date(),
       lastEnqueueError: null,
     },
   })
+  if (updated.count <= 0) {
+    await logStatusTransitionDenied({
+      taskId,
+      source: 'enqueueMeta',
+      details: { operation: 'markTaskEnqueued' },
+    })
+  }
+  return updated.count > 0
 }
 
 export async function updateTaskBillingInfo(taskId: string, billingInfo: TaskBillingInfo | null) {
@@ -363,11 +517,56 @@ export async function updateTaskBillingInfo(taskId: string, billingInfo: TaskBil
   })
 }
 
-function activeTaskWhere(taskId: string) {
+function taskWhereBySources(taskId: string, statuses: readonly TaskStatus[]) {
   return {
     id: taskId,
-    status: { in: [...ACTIVE_STATUSES] },
+    status: { in: [...statuses] },
   }
+}
+
+async function logStatusTransitionDenied(params: {
+  taskId: string
+  source: keyof typeof STATUS_SOURCES
+  details?: Record<string, unknown>
+}) {
+  const current = await taskModel.findUnique({
+    where: { id: params.taskId },
+    select: { status: true },
+  })
+  if (!current) {
+    recordTaskTransitionDenied({
+      taskId: params.taskId,
+      source: params.source,
+      expectedStatuses: STATUS_SOURCES[params.source],
+      currentStatus: null,
+      reason: 'task_missing',
+    })
+    serviceLogger.warn({
+      action: 'task.transition.denied.missing',
+      message: 'task transition denied because task does not exist',
+      taskId: params.taskId,
+      source: params.source,
+      expectedStatuses: STATUS_SOURCES[params.source],
+      details: params.details || null,
+    })
+    return
+  }
+  recordTaskTransitionDenied({
+    taskId: params.taskId,
+    source: params.source,
+    expectedStatuses: STATUS_SOURCES[params.source],
+    currentStatus: current.status,
+    reason: 'status_mismatch',
+  })
+  serviceLogger.warn({
+    action: 'task.transition.denied',
+    message: 'task transition denied by status guard',
+    taskId: params.taskId,
+    source: params.source,
+    expectedStatuses: STATUS_SOURCES[params.source],
+    currentStatus: current.status,
+    details: params.details || null,
+  })
 }
 
 export async function isTaskActive(taskId: string) {
@@ -383,7 +582,7 @@ export async function isTaskActive(taskId: string) {
 
 export async function tryMarkTaskProcessing(taskId: string, externalId?: string | null) {
   const result = await taskModel.updateMany({
-    where: activeTaskWhere(taskId),
+    where: taskWhereBySources(taskId, STATUS_SOURCES.processing),
     data: {
       status: TASK_STATUS.PROCESSING,
       startedAt: new Date(),
@@ -392,6 +591,13 @@ export async function tryMarkTaskProcessing(taskId: string, externalId?: string 
       attempt: { increment: 1 },
     },
   })
+  if (result.count <= 0) {
+    await logStatusTransitionDenied({
+      taskId,
+      source: 'processing',
+      details: { operation: 'tryMarkTaskProcessing' },
+    })
+  }
   return result.count > 0
 }
 
@@ -400,7 +606,7 @@ export async function trySetTaskExternalId(taskId: string, externalId: string) {
   if (!value) return false
   const result = await taskModel.updateMany({
     where: {
-      ...activeTaskWhere(taskId),
+      ...taskWhereBySources(taskId, STATUS_SOURCES.externalId),
       OR: [
         { externalId: null },
         { externalId: '' },
@@ -410,31 +616,52 @@ export async function trySetTaskExternalId(taskId: string, externalId: string) {
       externalId: value,
     },
   })
+  if (result.count <= 0) {
+    await logStatusTransitionDenied({
+      taskId,
+      source: 'externalId',
+      details: { operation: 'trySetTaskExternalId' },
+    })
+  }
   return result.count > 0
 }
 
 export async function touchTaskHeartbeat(taskId: string) {
   const result = await taskModel.updateMany({
-    where: activeTaskWhere(taskId),
+    where: taskWhereBySources(taskId, STATUS_SOURCES.heartbeat),
     data: { heartbeatAt: new Date() },
   })
+  if (result.count <= 0) {
+    await logStatusTransitionDenied({
+      taskId,
+      source: 'heartbeat',
+      details: { operation: 'touchTaskHeartbeat' },
+    })
+  }
   return result.count > 0
 }
 
 export async function tryUpdateTaskProgress(taskId: string, progress: number, payload?: Record<string, unknown> | null) {
   const result = await taskModel.updateMany({
-    where: activeTaskWhere(taskId),
+    where: taskWhereBySources(taskId, STATUS_SOURCES.progress),
     data: {
       progress,
       ...(payload ? { payload: toNullableJson(payload) } : {}),
     },
   })
+  if (result.count <= 0) {
+    await logStatusTransitionDenied({
+      taskId,
+      source: 'progress',
+      details: { operation: 'tryUpdateTaskProgress' },
+    })
+  }
   return result.count > 0
 }
 
 export async function tryMarkTaskCompleted(taskId: string, resultPayload?: Record<string, unknown> | null) {
   const result = await taskModel.updateMany({
-    where: activeTaskWhere(taskId),
+    where: taskWhereBySources(taskId, STATUS_SOURCES.completed),
     data: {
       status: TASK_STATUS.COMPLETED,
       progress: 100,
@@ -443,12 +670,19 @@ export async function tryMarkTaskCompleted(taskId: string, resultPayload?: Recor
       heartbeatAt: null,
     },
   })
+  if (result.count <= 0) {
+    await logStatusTransitionDenied({
+      taskId,
+      source: 'completed',
+      details: { operation: 'tryMarkTaskCompleted' },
+    })
+  }
   return result.count > 0
 }
 
 export async function tryMarkTaskFailed(taskId: string, errorCode: string, errorMessage: string) {
   const result = await taskModel.updateMany({
-    where: activeTaskWhere(taskId),
+    where: taskWhereBySources(taskId, STATUS_SOURCES.failed),
     data: {
       status: TASK_STATUS.FAILED,
       errorCode: errorCode.slice(0, 80),
@@ -457,6 +691,13 @@ export async function tryMarkTaskFailed(taskId: string, errorCode: string, error
       heartbeatAt: null,
     },
   })
+  if (result.count <= 0) {
+    await logStatusTransitionDenied({
+      taskId,
+      source: 'failed',
+      details: { operation: 'tryMarkTaskFailed' },
+    })
+  }
   return result.count > 0
 }
 
@@ -594,16 +835,64 @@ export async function sweepStaleTasks(params: {
 }
 
 export async function dismissFailedTasks(taskIds: string[], userId: string) {
-  if (taskIds.length === 0) return 0
+  const dismissedTasks = await dismissFailedTasksWithDetails(taskIds, userId)
+  return dismissedTasks.length
+}
+
+export async function dismissFailedTasksWithDetails(taskIds: string[], userId: string) {
+  if (taskIds.length === 0) return []
+  const uniqueTaskIds = Array.from(new Set(taskIds.filter((id) => typeof id === 'string' && id.trim())))
+  if (uniqueTaskIds.length === 0) return []
+
+  const candidates = await taskModel.findMany({
+    where: {
+      id: { in: uniqueTaskIds },
+      userId,
+      status: TASK_STATUS.FAILED,
+    },
+    select: {
+      id: true,
+      userId: true,
+      projectId: true,
+      type: true,
+      targetType: true,
+      targetId: true,
+      episodeId: true,
+      payload: true,
+    },
+  })
+  if (candidates.length === 0) return []
+
+  const dismissibleIds = candidates.map((task) => task.id)
   const result = await taskModel.updateMany({
     where: {
-      id: { in: taskIds },
+      id: { in: dismissibleIds },
       userId,
       status: TASK_STATUS.FAILED,
     },
     data: {
       status: TASK_STATUS.DISMISSED,
+      finishedAt: new Date(),
+      heartbeatAt: null,
     },
   })
-  return result.count
+  if (result.count <= 0) return []
+
+  return await taskModel.findMany({
+    where: {
+      id: { in: dismissibleIds },
+      userId,
+      status: TASK_STATUS.DISMISSED,
+    },
+    select: {
+      id: true,
+      userId: true,
+      projectId: true,
+      type: true,
+      targetType: true,
+      targetId: true,
+      episodeId: true,
+      payload: true,
+    },
+  })
 }

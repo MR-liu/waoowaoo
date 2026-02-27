@@ -37,6 +37,49 @@ function resolveVideoGenerationMode(payload: unknown): 'normal' | 'firstlastfram
   return isRecord(payload.firstLastFrame) ? 'firstlastframe' : 'normal'
 }
 
+function sanitizeFirstLastFrame(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null
+  const flModel = typeof value.flModel === 'string' ? value.flModel.trim() : ''
+  const customPrompt = typeof value.customPrompt === 'string' ? value.customPrompt.trim() : ''
+  const lastFrameStoryboardId =
+    typeof value.lastFrameStoryboardId === 'string'
+      ? value.lastFrameStoryboardId.trim()
+      : ''
+  const lastFramePanelIndex =
+    typeof value.lastFramePanelIndex === 'number' && Number.isFinite(value.lastFramePanelIndex)
+      ? Math.floor(value.lastFramePanelIndex)
+      : null
+
+  const payload: Record<string, unknown> = {}
+  if (flModel) payload.flModel = flModel
+  if (customPrompt) payload.customPrompt = customPrompt
+  if (lastFrameStoryboardId) payload.lastFrameStoryboardId = lastFrameStoryboardId
+  if (lastFramePanelIndex !== null) payload.lastFramePanelIndex = lastFramePanelIndex
+  return Object.keys(payload).length > 0 ? payload : {}
+}
+
+function buildVideoPanelTaskPayload(input: unknown): Record<string, unknown> {
+  if (!isRecord(input)) return {}
+  const videoModel = typeof input.videoModel === 'string' ? input.videoModel.trim() : ''
+  const storyboardId = typeof input.storyboardId === 'string' ? input.storyboardId.trim() : ''
+  const panelIndex =
+    typeof input.panelIndex === 'number' && Number.isFinite(input.panelIndex)
+      ? Math.floor(input.panelIndex)
+      : null
+  const customPrompt = typeof input.customPrompt === 'string' ? input.customPrompt.trim() : ''
+  const generationOptions = toVideoRuntimeSelections(input.generationOptions)
+  const firstLastFrame = sanitizeFirstLastFrame(input.firstLastFrame)
+
+  return {
+    ...(videoModel ? { videoModel } : {}),
+    ...(storyboardId ? { storyboardId } : {}),
+    ...(panelIndex !== null ? { panelIndex } : {}),
+    ...(customPrompt ? { customPrompt } : {}),
+    ...(Object.keys(generationOptions).length > 0 ? { generationOptions } : {}),
+    ...(firstLastFrame !== null ? { firstLastFrame } : {}),
+  }
+}
+
 function resolveVideoModelKeyFromPayload(payload: Record<string, unknown>): string | null {
   const firstLast = isRecord(payload.firstLastFrame) ? payload.firstLastFrame : null
   if (firstLast && typeof firstLast.flModel === 'string' && parseModelKeyStrict(firstLast.flModel)) {
@@ -179,19 +222,20 @@ export const POST = apiHandler(async (
   const { session } = authResult
 
   const body = await request.json()
-  requireVideoModelKeyFromPayload(body)
+  const taskPayload = buildVideoPanelTaskPayload(body)
+  requireVideoModelKeyFromPayload(taskPayload)
   const locale = resolveRequiredTaskLocale(request, body)
-  const isBatch = body?.all === true
+  const isBatch = isRecord(body) && body.all === true
 
-  validateFirstLastFrameModel(body?.firstLastFrame)
+  validateFirstLastFrameModel(taskPayload.firstLastFrame)
   await validateVideoCapabilityCombination({
-    payload: body,
+    payload: taskPayload,
     projectId,
     userId: session.user.id,
   })
 
   if (isBatch) {
-    const episodeId = body?.episodeId
+    const episodeId = isRecord(body) && typeof body.episodeId === 'string' ? body.episodeId.trim() : null
     if (!episodeId) {
       throw new ApiError('INVALID_PARAMS')
     }
@@ -223,11 +267,11 @@ export const POST = apiHandler(async (
           type: TASK_TYPE.VIDEO_PANEL,
           targetType: 'NovelPromotionPanel',
           targetId: panel.id,
-          payload: withTaskUiPayload(body, {
+          payload: withTaskUiPayload(taskPayload, {
             hasOutputAtStart: await hasPanelVideoOutput(panel.id),
           }),
           dedupeKey: `video_panel:${panel.id}`,
-          billingInfo: buildVideoPanelBillingInfoOrThrow(body),
+          billingInfo: buildVideoPanelBillingInfoOrThrow(taskPayload),
         }),
       ),
     )
@@ -235,9 +279,9 @@ export const POST = apiHandler(async (
     return NextResponse.json({ tasks: results, total: panels.length })
   }
 
-  const storyboardId = body?.storyboardId
-  const panelIndex = body?.panelIndex
-  if (!storyboardId || panelIndex === undefined) {
+  const storyboardId = typeof taskPayload.storyboardId === 'string' ? taskPayload.storyboardId : null
+  const panelIndex = typeof taskPayload.panelIndex === 'number' ? taskPayload.panelIndex : null
+  if (!storyboardId || panelIndex === null) {
     throw new ApiError('INVALID_PARAMS')
   }
 
@@ -258,11 +302,11 @@ export const POST = apiHandler(async (
     type: TASK_TYPE.VIDEO_PANEL,
     targetType: 'NovelPromotionPanel',
     targetId: panel.id,
-    payload: withTaskUiPayload(body, {
+    payload: withTaskUiPayload(taskPayload, {
       hasOutputAtStart: await hasPanelVideoOutput(panel.id),
     }),
     dedupeKey: `video_panel:${panel.id}`,
-    billingInfo: buildVideoPanelBillingInfoOrThrow(body),
+    billingInfo: buildVideoPanelBillingInfoOrThrow(taskPayload),
   })
 
   return NextResponse.json(result)

@@ -2,8 +2,10 @@ import { createHash } from 'crypto'
 import { NextRequest } from 'next/server'
 import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { readRequestJsonObject } from '@/lib/request-json'
 import { TASK_TYPE } from '@/lib/task/types'
 import { maybeSubmitLLMTask } from '@/lib/llm-observe/route-task'
+import { parseLLMRuntimeOptions } from '@/lib/llm-observe/route-runtime-options'
 import { getUserModelConfig } from '@/lib/config-service'
 
 /**
@@ -14,14 +16,26 @@ export const POST = apiHandler(async (request: NextRequest) => {
   if (isErrorResponse(authResult)) return authResult
   const { session } = authResult
 
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  const body = await readRequestJsonObject(request)
   const userInstruction = typeof body.userInstruction === 'string' ? body.userInstruction.trim() : ''
   if (!userInstruction) {
     throw new ApiError('INVALID_PARAMS')
   }
+  const parsedRuntimeOptions = parseLLMRuntimeOptions(body)
+  if (!parsedRuntimeOptions.ok) {
+    throw new ApiError('INVALID_PARAMS', { message: parsedRuntimeOptions.message })
+  }
+  if (
+    parsedRuntimeOptions.options.reasoning !== undefined
+    || parsedRuntimeOptions.options.reasoningEffort !== undefined
+    || parsedRuntimeOptions.options.temperature !== undefined
+  ) {
+    throw new ApiError('INVALID_PARAMS', { message: 'Only model is supported for this route' })
+  }
 
   const userConfig = await getUserModelConfig(session.user.id)
-  if (!userConfig.analysisModel) {
+  const analysisModel = parsedRuntimeOptions.options.model || userConfig.analysisModel || ''
+  if (!analysisModel) {
     throw new ApiError('MISSING_CONFIG')
   }
 
@@ -32,7 +46,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
 
   const payload = {
     userInstruction,
-    analysisModel: userConfig.analysisModel,
+    analysisModel,
     displayMode: 'detail' as const}
 
   const asyncTaskResponse = await maybeSubmitLLMTask({

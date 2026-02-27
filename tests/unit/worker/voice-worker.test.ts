@@ -97,18 +97,17 @@ describe('worker voice processor behavior', () => {
 
     const missingLineJob = buildJob({
       type: TASK_TYPE.VOICE_LINE,
-      targetId: '',
+      targetId: 'line-1',
       payload: { episodeId: 'episode-1' },
     })
-    await expect(processor!(missingLineJob)).rejects.toThrow('VOICE_LINE task missing lineId')
+    await expect(processor!(missingLineJob)).rejects.toThrow('VOICE_LINE_PAYLOAD_LINE_ID_REQUIRED')
 
     const missingEpisodeJob = buildJob({
       type: TASK_TYPE.VOICE_LINE,
-      episodeId: null,
       targetId: 'line-1',
-      payload: {},
+      payload: { lineId: 'line-1' },
     })
-    await expect(processor!(missingEpisodeJob)).rejects.toThrow('VOICE_LINE task missing episodeId')
+    await expect(processor!(missingEpisodeJob)).rejects.toThrow('VOICE_LINE_PAYLOAD_EPISODE_ID_REQUIRED')
   })
 
   it('VOICE_LINE: 正常生成时把核心参数传给 generateVoiceLine', async () => {
@@ -118,8 +117,8 @@ describe('worker voice processor behavior', () => {
     const job = buildJob({
       type: TASK_TYPE.VOICE_LINE,
       payload: {
-        lineId: 'line-9',
-        episodeId: 'episode-9',
+        lineId: 'line-1',
+        episodeId: 'episode-1',
         audioModel: 'fal::voice-model',
       },
     })
@@ -128,11 +127,27 @@ describe('worker voice processor behavior', () => {
     expect(result).toEqual({ lineId: 'line-1', audioUrl: 'cos/voice-line-1.mp3' })
     expect(generateVoiceLineMock).toHaveBeenCalledWith({
       projectId: 'project-1',
-      episodeId: 'episode-9',
-      lineId: 'line-9',
+      episodeId: 'episode-1',
+      lineId: 'line-1',
       userId: 'user-1',
       audioModel: 'fal::voice-model',
     })
+  })
+
+  it('VOICE_LINE: payload.lineId 与 targetId 不一致时显式失败', async () => {
+    const processor = workerState.processor
+    expect(processor).toBeTruthy()
+
+    const job = buildJob({
+      type: TASK_TYPE.VOICE_LINE,
+      targetId: 'line-1',
+      payload: {
+        lineId: 'line-2',
+        episodeId: 'episode-1',
+      },
+    })
+
+    await expect(processor!(job)).rejects.toThrow('VOICE_LINE_PAYLOAD_LINE_ID_MISMATCH')
   })
 
   it('VOICE_DESIGN / ASSET_HUB_VOICE_DESIGN: 路由到 voice design handler', async () => {

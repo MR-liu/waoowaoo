@@ -12,7 +12,7 @@ import { prisma } from '@/lib/prisma'
 import { createScopedLogger } from '@/lib/logging/core'
 import { TASK_STATUS, TASK_EVENT_TYPE } from './types'
 import { publishTaskEvent } from './publisher'
-import { rollbackTaskBillingForTask } from './service'
+import { failActiveTaskWithDedupeRelease, rollbackTaskBillingForTask } from './service'
 import {
     imageQueue,
     videoQueue,
@@ -44,6 +44,7 @@ const MISSING_RECONCILE_GRACE_MS = 30_000
 type JobState = 'alive' | 'terminal' | 'missing'
 
 const ALL_QUEUES = [imageQueue, videoQueue, voiceQueue, textQueue]
+const reconcileLogger = createScopedLogger({ module: 'task.reconcile' })
 
 /**
  * 检查 BullMQ 中某个 Job 的真实状态。
@@ -52,6 +53,7 @@ const ALL_QUEUES = [imageQueue, videoQueue, voiceQueue, textQueue]
  * - missing:  Job 在所有队列中均不存在
  */
 async function getJobState(taskId: string): Promise<JobState> {
+    let checkFailed = false
     for (const queue of ALL_QUEUES) {
         try {
             const job = await queue.getJob(taskId)
@@ -62,10 +64,27 @@ async function getJobState(taskId: string): Promise<JobState> {
             }
             // waiting | active | delayed | waiting-children → 仍然活着
             return 'alive'
-        } catch {
-            // 单个队列查询失败不影响其他队列
-            continue
+        } catch (error) {
+            checkFailed = true
+            reconcileLogger.error({
+                action: 'task.reconcile.job_state.failed',
+                message: 'failed to inspect queue job state',
+                taskId,
+                queue: queue.name,
+                errorCode: 'RECONCILE_QUEUE_CHECK_FAILED',
+                error:
+                    error instanceof Error
+                        ? {
+                            name: error.name,
+                            message: error.message,
+                            stack: error.stack,
+                        }
+                        : { message: String(error) },
+            })
         }
+    }
+    if (checkFailed) {
+        throw new Error('RECONCILE_QUEUE_CHECK_FAILED')
     }
     return 'missing'
 }
@@ -107,22 +126,14 @@ async function failOrphanedTask(
         ? `${reason}; billing rollback failed`
         : reason
 
-    const result = await prisma.task.updateMany({
-        where: {
-            id: task.id,
-            status: { in: ACTIVE_STATUSES },
-        },
-        data: {
-            status: TASK_STATUS.FAILED,
-            errorCode,
-            errorMessage,
-            finishedAt: new Date(),
-            heartbeatAt: null,
-            dedupeKey: null,
-        },
+    const failed = await failActiveTaskWithDedupeRelease({
+        taskId: task.id,
+        errorCode,
+        errorMessage,
+        source: 'reconcile_orphan',
     })
 
-    if (result.count > 0) {
+    if (failed) {
         // 发送 FAILED 事件，触发前端 SSE 更新 + 数据刷新
         await publishTaskEvent({
             taskId: task.id,
@@ -143,7 +154,7 @@ async function failOrphanedTask(
         })
     }
 
-    return result.count > 0
+    return failed
 }
 
 // ────────────────────── 批量对账 ──────────────────────
@@ -177,7 +188,27 @@ export async function reconcileActiveTasks(): Promise<string[]> {
 
     const reconciled: string[] = []
     for (const task of activeTasks) {
-        const jobState = await getJobState(task.id)
+        let jobState: JobState
+        try {
+            jobState = await getJobState(task.id)
+        } catch (error) {
+            reconcileLogger.error({
+                action: 'task.reconcile.task_state_check.failed',
+                message: 'skipped task reconciliation because queue state check failed',
+                taskId: task.id,
+                projectId: task.projectId,
+                errorCode: 'RECONCILE_QUEUE_CHECK_FAILED',
+                error:
+                    error instanceof Error
+                        ? {
+                            name: error.name,
+                            message: error.message,
+                            stack: error.stack,
+                        }
+                        : { message: String(error) },
+            })
+            continue
+        }
         if (jobState === 'alive') continue
         if (
             jobState === 'terminal'

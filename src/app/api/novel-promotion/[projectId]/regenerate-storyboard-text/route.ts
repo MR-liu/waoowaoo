@@ -7,6 +7,20 @@ import { TASK_TYPE } from '@/lib/task/types'
 import { buildDefaultTaskBillingInfo } from '@/lib/billing'
 import { getProjectModelConfig } from '@/lib/config-service'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function toTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function buildRegenerateStoryboardTextTaskPayload(input: unknown): Record<string, unknown> {
+  if (!isRecord(input)) return {}
+  const storyboardId = toTrimmedString(input.storyboardId)
+  return storyboardId ? { storyboardId } : {}
+}
+
 export const POST = apiHandler(async (
   request: NextRequest,
   context: { params: Promise<{ projectId: string }> },
@@ -18,15 +32,19 @@ export const POST = apiHandler(async (
   const { session } = authResult
 
   const body = await request.json()
+  const taskPayload = buildRegenerateStoryboardTextTaskPayload(body)
   const locale = resolveRequiredTaskLocale(request, body)
-  const storyboardId = body?.storyboardId
+  const storyboardId = typeof taskPayload.storyboardId === 'string' ? taskPayload.storyboardId : ''
 
   if (!storyboardId) {
     throw new ApiError('INVALID_PARAMS')
   }
 
   const projectModelConfig = await getProjectModelConfig(projectId, session.user.id)
-  const billingPayload = { ...body, ...(projectModelConfig.analysisModel ? { analysisModel: projectModelConfig.analysisModel } : {}) }
+  const billingPayload = {
+    ...taskPayload,
+    ...(projectModelConfig.analysisModel ? { analysisModel: projectModelConfig.analysisModel } : {}),
+  }
 
   const result = await submitTask({
     userId: session.user.id,

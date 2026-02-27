@@ -207,4 +207,52 @@ describe('recovered run subscription', () => {
     }))
     cleanup()
   })
+
+  it('settles on db_reconcile terminal lifecycle event to avoid refresh hanging', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        events: [
+          buildLifecycleEvent({
+            lifecycleType: 'task.processing',
+            stepId: 'clip_1_phase1',
+            stepTitle: '分镜规划',
+            stepIndex: 1,
+            stepTotal: 1,
+            message: 'running',
+          }),
+          buildLifecycleEvent({
+            lifecycleType: 'task.completed',
+            source: 'db_reconcile',
+            reconcileErrorCode: 'TASK_TERMINAL_STATE_MISMATCH',
+            reconcileReason: 'terminal_event_missing',
+            message: '任务终态已通过数据库对账补齐',
+          }),
+        ],
+      }),
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const applyAndCapture = vi.fn()
+    const pollTaskTerminalState = vi.fn(async () => null)
+    const onSettled = vi.fn()
+
+    subscribeRecoveredRun({
+      projectId: 'project-1',
+      storageScopeKey: 'episode-1',
+      taskId: 'task-1',
+      eventSourceMode: 'external',
+      taskStreamTimeoutMs: 10_000,
+      applyAndCapture,
+      pollTaskTerminalState,
+      onSettled,
+    })
+
+    await waitForCondition(() => onSettled.mock.calls.length === 1)
+    expect(onSettled).toHaveBeenCalledTimes(1)
+    expect(applyAndCapture).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'run.complete',
+      runId: 'task-1',
+    }))
+  })
 })

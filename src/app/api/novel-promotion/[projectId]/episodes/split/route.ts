@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { readRequestJsonObject } from '@/lib/request-json'
 import { TASK_TYPE } from '@/lib/task/types'
 import { maybeSubmitLLMTask } from '@/lib/llm-observe/route-task'
+import { parseLLMRuntimeOptions } from '@/lib/llm-observe/route-runtime-options'
 
 /**
  * AI 分集 API（任务化）
@@ -20,8 +22,12 @@ export const POST = apiHandler(async (
     throw new ApiError('INVALID_PARAMS')
   }
 
-  const body = await request.json().catch(() => ({}))
+  const body = await readRequestJsonObject(request)
   const content = typeof body?.content === 'string' ? body.content : ''
+  const parsed = parseLLMRuntimeOptions(body)
+  if (!parsed.ok) {
+    throw new ApiError('INVALID_PARAMS', { message: parsed.message })
+  }
 
   if (!content) {
     throw new ApiError('INVALID_PARAMS')
@@ -38,7 +44,10 @@ export const POST = apiHandler(async (
     targetType: 'NovelPromotionProject',
     targetId: projectId,
     routePath: `/api/novel-promotion/${projectId}/episodes/split`,
-    body: { content },
+    body: {
+      content,
+      ...parsed.options,
+    },
     dedupeKey: `episode_split_llm:${projectId}:${content.length}`})
   if (asyncTaskResponse) return asyncTaskResponse
 

@@ -131,7 +131,10 @@ async function undoCharacterRegenerate(db: UndoRegenerateDb, appearanceId: strin
             try {
                 const storageKey = await resolveStorageKeyFromMediaValue(key)
                 if (storageKey) await deleteCOSObject(storageKey)
-            } catch { }
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : String(error)
+                _ulogError(`[undo-regenerate] 删除角色当前图片失败 appearanceId=${appearanceId} key=${key} error=${message}`)
+            }
         }
     }
 
@@ -189,7 +192,10 @@ async function undoLocationRegenerate(db: UndoRegenerateDb, locationId: string) 
                     try {
                         const storageKey = await resolveStorageKeyFromMediaValue(img.imageUrl)
                         if (storageKey) await deleteCOSObject(storageKey)
-                    } catch { }
+                    } catch (error: unknown) {
+                        const message = error instanceof Error ? error.message : String(error)
+                        _ulogError(`[undo-regenerate] 删除场景当前图片失败 locationId=${locationId} imageId=${img.id} error=${message}`)
+                    }
                 }
                 // 恢复上一版本（图片 + 描述词）
                 await tx.locationImage.update({
@@ -235,7 +241,10 @@ async function undoPanelRegenerate(db: UndoRegenerateDb, panelId: string) {
         try {
             const storageKey = await resolveStorageKeyFromMediaValue(panel.imageUrl)
             if (storageKey) await deleteCOSObject(storageKey)
-        } catch { }
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error)
+            _ulogError(`[undo-regenerate] 删除镜头当前图片失败 panelId=${panelId} error=${message}`)
+        }
     }
 
     // 恢复上一版本

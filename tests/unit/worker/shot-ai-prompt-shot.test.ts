@@ -71,11 +71,13 @@ describe('worker shot-ai-prompt-shot behavior', () => {
       currentVideoPrompt: 'old video prompt',
       modifyInstruction: 'new camera movement',
       referencedAssets: [{ name: 'Hero', description: 'black coat' }],
+      analysisModel: 'llm::override',
     }
     const job = buildJob(payload)
 
     const result = await handleModifyShotPromptTask(job, payload)
 
+    expect(persistMock.resolveAnalysisModel).toHaveBeenCalledWith('project-1', 'llm::override')
     expect(runtimeMock.runShotPromptCompletion).toHaveBeenCalledWith(expect.objectContaining({
       action: 'ai_modify_shot_prompt',
       prompt: 'shot-final-prompt',

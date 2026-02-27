@@ -13,14 +13,66 @@ import {
   hasLocationImageOutput
 } from '@/lib/task/has-output'
 
-function toNumber(value: unknown) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function toInteger(value: unknown): number | null {
   const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : null
+  if (!Number.isFinite(parsed)) return null
+  return Math.floor(parsed)
+}
+
+function toTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function toObject(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  return value as Record<string, unknown>
+  return isRecord(value) ? value : {}
+}
+
+function buildModifyAssetTaskPayload(
+  input: unknown,
+  extraImageUrls: string[],
+  extraImageIssues: Array<Record<string, unknown>>,
+): Record<string, unknown> {
+  if (!isRecord(input)) {
+    return {
+      extraImageUrls,
+      meta: {
+        outboundImageInputAudit: {
+          extraImageUrls: extraImageIssues,
+        },
+      },
+    }
+  }
+
+  const type = toTrimmedString(input.type)
+  const modifyPrompt = toTrimmedString(input.modifyPrompt)
+  const appearanceId = toTrimmedString(input.appearanceId)
+  const characterId = toTrimmedString(input.characterId || input.id)
+  const locationImageId = toTrimmedString(input.locationImageId)
+  const locationId = toTrimmedString(input.locationId || input.id)
+  const appearanceIndex = toInteger(input.appearanceIndex)
+  const imageIndex = toInteger(input.imageIndex)
+
+  return {
+    ...(type ? { type } : {}),
+    ...(modifyPrompt ? { modifyPrompt } : {}),
+    ...(appearanceId ? { appearanceId } : {}),
+    ...(characterId ? { characterId } : {}),
+    ...(locationImageId ? { locationImageId } : {}),
+    ...(locationId ? { locationId } : {}),
+    ...(appearanceIndex !== null ? { appearanceIndex } : {}),
+    ...(imageIndex !== null ? { imageIndex } : {}),
+    extraImageUrls,
+    meta: {
+      ...toObject(input.meta),
+      outboundImageInputAudit: {
+        extraImageUrls: extraImageIssues,
+      },
+    },
+  }
 }
 
 export const POST = apiHandler(async (
@@ -35,8 +87,8 @@ export const POST = apiHandler(async (
 
   const body = await request.json()
   const locale = resolveRequiredTaskLocale(request, body)
-  const type = body?.type
-  const modifyPrompt = body?.modifyPrompt
+  const type = isRecord(body) ? toTrimmedString(body.type) : ''
+  const modifyPrompt = isRecord(body) ? toTrimmedString(body.modifyPrompt) : ''
 
   if (!type || !modifyPrompt) {
     throw new ApiError('INVALID_PARAMS')
@@ -46,29 +98,36 @@ export const POST = apiHandler(async (
     throw new ApiError('INVALID_PARAMS')
   }
 
+  const appearanceId = isRecord(body) ? toTrimmedString(body.appearanceId) : ''
+  const characterId = isRecord(body) ? toTrimmedString(body.characterId || body.id) : ''
+  const locationImageId = isRecord(body) ? toTrimmedString(body.locationImageId) : ''
+  const locationId = isRecord(body) ? toTrimmedString(body.locationId || body.id) : ''
+
   const targetType = type === 'character' ? 'CharacterAppearance' : 'LocationImage'
   const targetId = type === 'character'
-    ? (body?.appearanceId || body?.characterId)
-    : (body?.locationImageId || body?.locationId)
+    ? (appearanceId || characterId)
+    : (locationImageId || locationId)
 
   if (!targetId) {
     throw new ApiError('INVALID_PARAMS')
   }
+  const appearanceIndex = isRecord(body) ? toInteger(body.appearanceIndex) : null
+  const imageIndex = isRecord(body) ? toInteger(body.imageIndex) : null
 
   const hasOutputAtStart = type === 'character'
     ? await hasCharacterAppearanceOutput({
-      appearanceId: body?.appearanceId || null,
-      characterId: body?.characterId || null,
-      appearanceIndex: toNumber(body?.appearanceIndex)
+      appearanceId: appearanceId || null,
+      characterId: characterId || null,
+      appearanceIndex
     })
     : await hasLocationImageOutput({
-      imageId: body?.locationImageId || null,
-      locationId: body?.locationId || null,
-      imageIndex: toNumber(body?.imageIndex)
+      imageId: locationImageId || null,
+      locationId: locationId || null,
+      imageIndex
     })
 
   const extraImageAudit = sanitizeImageInputsForTaskPayload(
-    Array.isArray(body?.extraImageUrls) ? body.extraImageUrls : [],
+    isRecord(body) && Array.isArray(body.extraImageUrls) ? body.extraImageUrls : [],
   )
   const rejectedRelativePathCount = extraImageAudit.issues.filter(
     (issue) => issue.reason === 'relative_path_rejected',
@@ -77,17 +136,7 @@ export const POST = apiHandler(async (
     throw new ApiError('INVALID_PARAMS')
   }
 
-  const baseMeta = toObject(body?.meta)
-  const payload = {
-    ...body,
-    extraImageUrls: extraImageAudit.normalized,
-    meta: {
-      ...baseMeta,
-      outboundImageInputAudit: {
-        extraImageUrls: extraImageAudit.issues
-      }
-    }
-  }
+  const payload = buildModifyAssetTaskPayload(body, extraImageAudit.normalized, extraImageAudit.issues)
 
   const projectModelConfig = await getProjectModelConfig(projectId, session.user.id)
   const imageModel = projectModelConfig.editModel
@@ -116,7 +165,7 @@ export const POST = apiHandler(async (
       intent: 'modify',
       hasOutputAtStart
     }),
-    dedupeKey: `modify_asset_image:${targetType}:${targetId}:${body?.imageIndex ?? 'na'}`,
+    dedupeKey: `modify_asset_image:${targetType}:${targetId}:${imageIndex ?? 'na'}`,
     billingInfo: buildDefaultTaskBillingInfo(TASK_TYPE.MODIFY_ASSET_IMAGE, billingPayload)
   })
 

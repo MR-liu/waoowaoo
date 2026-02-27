@@ -110,17 +110,26 @@ describe('worker shot-ai-variants behavior', () => {
   })
 
   it('success -> returns suggestions and signed panel image', async () => {
-    const payload = { panelId: 'panel-1' }
+    const payload = {
+      panelId: 'panel-1',
+      model: 'llm::analysis-runtime',
+      reasoning: false,
+      reasoningEffort: 'minimal',
+      temperature: 0.15,
+    }
     const job = buildJob(payload)
 
     const result = await handleAnalyzeShotVariantsTask(job, payload)
 
     expect(llmMock.chatCompletionWithVision).toHaveBeenCalledWith(
       'user-1',
-      'llm::analysis-1',
+      'llm::analysis-runtime',
       'shot-variants-prompt',
       ['https://signed.example/panel-1.png'],
       expect.objectContaining({
+        reasoning: false,
+        reasoningEffort: 'minimal',
+        temperature: 0.15,
         projectId: 'project-1',
         action: 'analyze_shot_variants',
       }),
@@ -143,5 +152,17 @@ describe('worker shot-ai-variants behavior', () => {
     const job = buildJob(payload)
 
     await expect(handleAnalyzeShotVariantsTask(job, payload)).rejects.toThrow('生成的变体数量不足')
+  })
+
+  it('invalid runtime options in payload -> explicit error', async () => {
+    const payload = {
+      panelId: 'panel-1',
+      temperature: 3.2,
+    }
+    const job = buildJob(payload)
+    await expect(handleAnalyzeShotVariantsTask(job, payload)).rejects.toThrow(
+      'INVALID_RUNTIME_OPTIONS: temperature must be within [0, 2]',
+    )
+    expect(llmMock.chatCompletionWithVision).not.toHaveBeenCalled()
   })
 })

@@ -67,6 +67,7 @@ describe('api specific - characters POST forwarding to reference task', () => {
         generateFromReference: true,
         referenceImageUrl: 'https://example.com/ref.png',
         customDescription: '冷静，黑发',
+        meta: { locale: 'zh', injected: 'should-not-forward' },
       },
     })
 
@@ -82,15 +83,17 @@ describe('api specific - characters POST forwarding to reference task', () => {
     expect(typeof rawBody).toBe('string')
     const forwarded = JSON.parse(String(rawBody)) as {
       locale?: string
-      meta?: { locale?: string }
+      meta?: Record<string, unknown>
       customDescription?: string
       referenceImageUrls?: string[]
       appearanceId?: string
       characterId?: string
+      injected?: unknown
     }
 
     expect(forwarded.locale).toBe('zh')
-    expect(forwarded.meta?.locale).toBe('zh')
+    expect(forwarded.meta).toBeUndefined()
+    expect(forwarded.injected).toBeUndefined()
     expect(forwarded.customDescription).toBe('冷静，黑发')
     expect(forwarded.referenceImageUrls).toEqual(['https://example.com/ref.png'])
     expect(forwarded.characterId).toBe('character-1')

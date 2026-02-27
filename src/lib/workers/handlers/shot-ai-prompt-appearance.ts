@@ -14,7 +14,7 @@ export async function handleModifyAppearanceTask(job: Job<TaskJobData>, payload:
   const appearanceId = readRequiredString(payload.appearanceId, 'appearanceId')
   const currentDescription = readRequiredString(payload.currentDescription, 'currentDescription')
   const modifyInstruction = readRequiredString(payload.modifyInstruction, 'modifyInstruction')
-  const novelData = await resolveAnalysisModel(job.data.projectId)
+  const novelData = await resolveAnalysisModel(job.data.projectId, payload.analysisModel)
 
   const finalPrompt = buildPrompt({
     promptId: PROMPT_IDS.NP_CHARACTER_MODIFY,

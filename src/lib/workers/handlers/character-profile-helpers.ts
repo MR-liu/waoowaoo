@@ -25,7 +25,11 @@ export function parseVisualResponse(responseText: string): AnyObj {
   return JSON.parse(cleaned) as AnyObj
 }
 
-export async function resolveProjectModel(projectId: string) {
+function resolveOptionalAnalysisModel(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+export async function resolveProjectModel(projectId: string, overrideModel?: unknown) {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: {
@@ -40,6 +44,8 @@ export async function resolveProjectModel(projectId: string) {
   })
   if (!project) throw new Error('Project not found')
   if (!project.novelPromotionData) throw new Error('Novel promotion data not found')
-  if (!project.novelPromotionData.analysisModel) throw new Error('请先在项目设置中配置分析模型')
+  const analysisModel = resolveOptionalAnalysisModel(overrideModel) || project.novelPromotionData.analysisModel || ''
+  if (!analysisModel) throw new Error('请先在项目设置中配置分析模型')
+  project.novelPromotionData.analysisModel = analysisModel
   return project
 }

@@ -1,6 +1,10 @@
 import { prisma } from '@/lib/prisma'
 
-export async function resolveAnalysisModel(projectId: string): Promise<{
+function resolveOptionalAnalysisModel(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+export async function resolveAnalysisModel(projectId: string, overrideModel?: unknown): Promise<{
   id: string
   analysisModel: string
 }> {
@@ -12,10 +16,11 @@ export async function resolveAnalysisModel(projectId: string): Promise<{
     },
   })
   if (!novelData) throw new Error('Novel promotion project not found')
-  if (!novelData.analysisModel) throw new Error('请先在项目设置中配置分析模型')
+  const analysisModel = resolveOptionalAnalysisModel(overrideModel) || novelData.analysisModel || ''
+  if (!analysisModel) throw new Error('请先在项目设置中配置分析模型')
   return {
     id: novelData.id,
-    analysisModel: novelData.analysisModel,
+    analysisModel,
   }
 }
 

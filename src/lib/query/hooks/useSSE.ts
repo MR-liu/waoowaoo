@@ -132,11 +132,13 @@ export function useSSE({ projectId, episodeId, enabled = true, onEvent }: UseSSE
           normalizedLifecycleType === TASK_EVENT_TYPE.CREATED ||
           normalizedLifecycleType === TASK_EVENT_TYPE.COMPLETED ||
           normalizedLifecycleType === TASK_EVENT_TYPE.FAILED ||
+          normalizedLifecycleType === TASK_EVENT_TYPE.DISMISSED ||
           (normalizedLifecycleType === TASK_EVENT_TYPE.PROCESSING &&
             typeof eventPayload?.progress !== 'number')
         const shouldInvalidateTargetStates =
           normalizedLifecycleType === TASK_EVENT_TYPE.COMPLETED ||
-          normalizedLifecycleType === TASK_EVENT_TYPE.FAILED
+          normalizedLifecycleType === TASK_EVENT_TYPE.FAILED ||
+          normalizedLifecycleType === TASK_EVENT_TYPE.DISMISSED
 
         if (isLifecycleEvent && shouldInvalidateTasksList) {
           queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all(projectId) })
@@ -186,7 +188,8 @@ export function useSSE({ projectId, episodeId, enabled = true, onEvent }: UseSSE
 
         if (
           normalizedLifecycleType === TASK_EVENT_TYPE.COMPLETED ||
-          normalizedLifecycleType === TASK_EVENT_TYPE.FAILED
+          normalizedLifecycleType === TASK_EVENT_TYPE.FAILED ||
+          normalizedLifecycleType === TASK_EVENT_TYPE.DISMISSED
         ) {
           invalidateByTarget(targetType, resolvedEpisodeId)
         }

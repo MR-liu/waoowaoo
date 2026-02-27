@@ -27,11 +27,12 @@ const prismaMock = vi.hoisted(() => ({
 const sharedMock = vi.hoisted(() => ({
   generateLabeledImageToCos: vi.fn(async () => 'cos/character-generated-0.png'),
 }))
+const reportTaskProgressMock = vi.hoisted(() => vi.fn(async () => undefined))
 
 vi.mock('@/lib/workers/utils', () => utilsMock)
 vi.mock('@/lib/media/outbound-image', () => outboundMock)
 vi.mock('@/lib/prisma', () => ({ prisma: prismaMock }))
-vi.mock('@/lib/workers/shared', () => ({ reportTaskProgress: vi.fn(async () => undefined) }))
+vi.mock('@/lib/workers/shared', () => ({ reportTaskProgress: reportTaskProgressMock }))
 vi.mock('@/lib/workers/handlers/image-task-handler-shared', async () => {
   const actual = await vi.importActual<typeof import('@/lib/workers/handlers/image-task-handler-shared')>(
     '@/lib/workers/handlers/image-task-handler-shared',
@@ -116,5 +117,11 @@ describe('worker character-image-task-handler behavior', () => {
         imageUrl: 'cos/character-generated-0.png',
       },
     })
+
+    expect(reportTaskProgressMock).toHaveBeenCalledWith(job, 15, expect.objectContaining({
+      stage: 'generate_character_image',
+      index: 0,
+    }))
+    expect(utilsMock.assertTaskActive).toHaveBeenCalledWith(job, 'persist_character_image')
   })
 })

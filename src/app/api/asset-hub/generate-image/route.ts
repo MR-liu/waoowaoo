@@ -12,9 +12,33 @@ import {
 } from '@/lib/task/has-output'
 import { withTaskUiPayload } from '@/lib/task/ui-payload'
 
-function toNumber(value: unknown) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function toTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function toInteger(value: unknown): number | null {
   const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : null
+  if (!Number.isFinite(parsed)) return null
+  return Math.floor(parsed)
+}
+
+function buildAssetHubGenerateImageTaskPayload(input: unknown): Record<string, unknown> {
+  if (!isRecord(input)) return {}
+  const type = toTrimmedString(input.type)
+  const id = toTrimmedString(input.id)
+  const appearanceIndex = toInteger(input.appearanceIndex)
+  const imageIndex = toInteger(input.imageIndex)
+
+  return {
+    ...(type ? { type } : {}),
+    ...(id ? { id } : {}),
+    ...(appearanceIndex !== null ? { appearanceIndex } : {}),
+    ...(imageIndex !== null ? { imageIndex } : {}),
+  }
 }
 
 export const POST = apiHandler(async (request: NextRequest) => {
@@ -23,10 +47,13 @@ export const POST = apiHandler(async (request: NextRequest) => {
   const { session } = authResult
 
   const body = await request.json()
+  const taskPayload = buildAssetHubGenerateImageTaskPayload(body)
   const locale = resolveRequiredTaskLocale(request, body)
-  const type = body?.type
-  const id = body?.id
-  const appearanceIndex = body?.appearanceIndex
+  const type = typeof taskPayload.type === 'string' ? taskPayload.type : ''
+  const id = typeof taskPayload.id === 'string' ? taskPayload.id : ''
+  const appearanceIndex = typeof taskPayload.appearanceIndex === 'number'
+    ? taskPayload.appearanceIndex
+    : null
 
   if (!type || !id) {
     throw new ApiError('INVALID_PARAMS')
@@ -40,7 +67,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
   const hasOutputAtStart = type === 'character'
     ? await hasGlobalCharacterOutput({
       characterId: id,
-      appearanceIndex: toNumber(appearanceIndex)
+      appearanceIndex
     })
     : await hasGlobalLocationOutput({
       locationId: id
@@ -55,7 +82,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
     billingPayload = buildImageBillingPayloadFromUserConfig({
       userModelConfig,
       imageModel,
-      basePayload: body,
+      basePayload: taskPayload,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Image model capability not configured'

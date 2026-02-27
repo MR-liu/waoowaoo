@@ -743,7 +743,12 @@ export function addSignedUrlsToStoryboard(storyboard: StoryboardLike) {
         try {
           const history = JSON.parse(historyField)
           panelHistoryCount = Array.isArray(history) ? history.length : 0
-        } catch { }
+        } catch (error: unknown) {
+          _ulogWarn('[签名URL] 解析 panel history 失败，使用默认计数 0', {
+            panelId: dbPanel.id || null,
+            error: extractErrorInfo(error).message,
+          })
+        }
       }
 
       // panel.imageUrl 为唯一数据源
@@ -768,7 +773,12 @@ export function addSignedUrlsToStoryboard(storyboard: StoryboardLike) {
             })
             signedCandidateImages = JSON.stringify(signedCandidates)
           }
-        } catch { }
+        } catch (error: unknown) {
+          _ulogWarn('[签名URL] 解析 candidateImages 失败，保留原始值', {
+            panelId: dbPanel.id || null,
+            error: extractErrorInfo(error).message,
+          })
+        }
       }
 
       return {
@@ -796,7 +806,12 @@ export function addSignedUrlsToStoryboard(storyboard: StoryboardLike) {
     try {
       const history = JSON.parse(storyboard.imageHistory)
       historyCount = Array.isArray(history) ? history.length : 0
-    } catch { }
+    } catch (error: unknown) {
+      _ulogWarn('[签名URL] 解析 storyboard history 失败，使用默认计数 0', {
+        storyboardId: storyboard.id || null,
+        error: extractErrorInfo(error).message,
+      })
+    }
   }
 
   return {

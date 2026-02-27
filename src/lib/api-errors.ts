@@ -354,7 +354,29 @@ async function extractRouteContext<TParams extends RouteParams>(
   let params: Record<string, unknown> = {}
   try {
     params = (await ctx.params) || {}
-  } catch {}
+  } catch (error) {
+    const logger = createScopedLogger({
+      module: 'api',
+      action: 'api.route_context.resolve_failed',
+      requestId: getRequestId(req) || undefined,
+    })
+    logger.warn({
+      message: 'failed to resolve route params, fallback to query params',
+      details: {
+        path: req.nextUrl.pathname,
+      },
+      error:
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
+          : {
+              message: String(error),
+            },
+    })
+  }
 
   const projectId =
     (typeof params.projectId === 'string' && params.projectId) ||
@@ -564,4 +586,46 @@ export function throwApiError(code: ApiErrorCode, details?: Record<string, unkno
 
 export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError
+}
+
+type ApiSuccessInit = {
+  status?: number
+  code?: string
+  message?: string
+  /**
+   * Keep backward-compatible top-level fields by flattening object-like `data`.
+   */
+  flattenData?: boolean
+}
+
+function toFlatRecord(data: unknown): Record<string, unknown> {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {}
+  return data as Record<string, unknown>
+}
+
+export function apiSuccess<T>(
+  req: NextRequest,
+  data: T,
+  init?: ApiSuccessInit,
+): NextResponse {
+  const requestId = getRequestId(req) || createRequestId()
+  setRequestId(req, requestId)
+
+  const body: Record<string, unknown> = {
+    success: true,
+    code: init?.code || 'OK',
+    message: init?.message || 'OK',
+    requestId,
+    data,
+  }
+
+  if (init?.flattenData !== false) {
+    Object.assign(body, toFlatRecord(data))
+  }
+
+  const response = NextResponse.json(body, {
+    status: init?.status ?? 200,
+  })
+  response.headers.set('x-request-id', requestId)
+  return response
 }

@@ -118,13 +118,31 @@ describe('worker clips-build behavior', () => {
   })
 
   it('success path -> creates clip row with concrete boundaries and characters payload', async () => {
-    const job = buildJob({ episodeId: 'episode-1' })
+    const job = buildJob({
+      episodeId: 'episode-1',
+      model: 'llm::analysis-runtime',
+      reasoning: true,
+      reasoningEffort: 'medium',
+      temperature: 0.45,
+    })
     const result = await handleClipsBuildTask(job)
 
     expect(result).toEqual({
       episodeId: 'episode-1',
       count: 1,
     })
+    expect(llmMock.chatCompletion).toHaveBeenCalledWith(
+      'user-1',
+      'llm::analysis-runtime',
+      [{ role: 'user', content: expect.any(String) }],
+      expect.objectContaining({
+        reasoning: true,
+        reasoningEffort: 'medium',
+        temperature: 0.45,
+        projectId: 'project-1',
+        action: 'split_clips',
+      }),
+    )
 
     expect(prismaMock.novelPromotionClip.create).toHaveBeenCalledWith({
       data: {
@@ -153,5 +171,14 @@ describe('worker clips-build behavior', () => {
 
     const job = buildJob({ episodeId: 'episode-1' })
     await expect(handleClipsBuildTask(job)).rejects.toThrow('split_clips boundary matching failed')
+  })
+
+  it('invalid runtime options in payload -> explicit error', async () => {
+    const job = buildJob({
+      episodeId: 'episode-1',
+      model: 123,
+    })
+    await expect(handleClipsBuildTask(job)).rejects.toThrow('INVALID_RUNTIME_OPTIONS: model must be a string')
+    expect(llmMock.chatCompletion).not.toHaveBeenCalled()
   })
 })

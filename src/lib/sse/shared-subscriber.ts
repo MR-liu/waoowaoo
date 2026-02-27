@@ -62,7 +62,10 @@ class SharedSubscriber {
       this.listeners.delete(channel)
       try {
         await this.subscriber.unsubscribe(channel)
-      } catch {}
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        _ulogError(`[SSE:shared] unsubscribe failed channel=${channel} error=${message}`)
+      }
     }
   }
 }

@@ -36,7 +36,12 @@ function parseJsonPrompt(responseText: string): string {
 export async function handleAssetHubAIModifyTask(job: Job<TaskJobData>) {
   const payload = (job.data.payload || {}) as Record<string, unknown>
   const userConfig = await getUserModelConfig(job.data.userId)
-  if (!userConfig.analysisModel) {
+  const analysisModelFromPayload =
+    typeof payload.analysisModel === 'string' && payload.analysisModel.trim()
+      ? payload.analysisModel.trim()
+      : ''
+  const analysisModel = analysisModelFromPayload || userConfig.analysisModel || ''
+  if (!analysisModel) {
     throw new Error('请先在用户配置中设置分析模型')
   }
 
@@ -85,7 +90,7 @@ export async function handleAssetHubAIModifyTask(job: Job<TaskJobData>) {
     async () =>
       await chatCompletion(
         job.data.userId,
-        userConfig.analysisModel!,
+        analysisModel,
         [{ role: 'user', content: finalPrompt }],
         {
           temperature: 0.7,

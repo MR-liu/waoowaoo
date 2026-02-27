@@ -12,6 +12,37 @@ import {
   hasLocationImageOutput
 } from '@/lib/task/has-output'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function toTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function toInteger(value: unknown): number | null {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return null
+  return Math.floor(parsed)
+}
+
+function buildRegenerateGroupTaskPayload(input: unknown): Record<string, unknown> {
+  if (!isRecord(input)) return {}
+  const type = toTrimmedString(input.type)
+  const id = toTrimmedString(input.id)
+  const appearanceId = toTrimmedString(input.appearanceId)
+  const appearanceIndex = toInteger(input.appearanceIndex)
+  const imageIndex = toInteger(input.imageIndex)
+
+  return {
+    ...(type ? { type } : {}),
+    ...(id ? { id } : {}),
+    ...(appearanceId ? { appearanceId } : {}),
+    ...(appearanceIndex !== null ? { appearanceIndex } : {}),
+    ...(imageIndex !== null ? { imageIndex } : {}),
+  }
+}
+
 export const POST = apiHandler(async (
   request: NextRequest,
   context: { params: Promise<{ projectId: string }> },
@@ -23,10 +54,11 @@ export const POST = apiHandler(async (
   const { session } = authResult
 
   const body = await request.json()
+  const taskPayload = buildRegenerateGroupTaskPayload(body)
   const locale = resolveRequiredTaskLocale(request, body)
-  const type = body?.type
-  const id = body?.id
-  const appearanceId = body?.appearanceId
+  const type = typeof taskPayload.type === 'string' ? taskPayload.type : ''
+  const id = typeof taskPayload.id === 'string' ? taskPayload.id : ''
+  const appearanceId = typeof taskPayload.appearanceId === 'string' ? taskPayload.appearanceId : ''
 
   if (!type || !id) {
     throw new ApiError('INVALID_PARAMS')
@@ -42,13 +74,21 @@ export const POST = apiHandler(async (
 
   const targetType = type === 'character' ? 'CharacterAppearance' : 'LocationImage'
   const targetId = type === 'character' ? appearanceId : id
+  const appearanceIndex = typeof taskPayload.appearanceIndex === 'number'
+    ? taskPayload.appearanceIndex
+    : null
+  const imageIndex = typeof taskPayload.imageIndex === 'number'
+    ? taskPayload.imageIndex
+    : null
   const hasOutputAtStart = type === 'character'
     ? await hasCharacterAppearanceOutput({
       appearanceId,
-      characterId: id
+      characterId: id,
+      appearanceIndex,
     })
     : await hasLocationImageOutput({
-      locationId: id
+      locationId: id,
+      imageIndex,
     })
 
   const projectModelConfig = await getProjectModelConfig(projectId, session.user.id)
@@ -62,7 +102,7 @@ export const POST = apiHandler(async (
       projectId,
       userId: session.user.id,
       imageModel,
-      basePayload: body,
+      basePayload: taskPayload,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Image model capability not configured'

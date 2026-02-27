@@ -48,7 +48,8 @@ function normalizeLifecycleType(value: unknown): string | null {
     value === TASK_EVENT_TYPE.CREATED ||
     value === TASK_EVENT_TYPE.PROCESSING ||
     value === TASK_EVENT_TYPE.COMPLETED ||
-    value === TASK_EVENT_TYPE.FAILED
+    value === TASK_EVENT_TYPE.FAILED ||
+    value === TASK_EVENT_TYPE.DISMISSED
   ) {
     return value
   }
@@ -235,7 +236,7 @@ export function mapTaskSSEEventToRunEvents(event: SSEEvent): RunStreamEvent[] {
     return runEvents
   }
 
-  if (lifecycleType === TASK_EVENT_TYPE.FAILED) {
+  if (lifecycleType === TASK_EVENT_TYPE.FAILED || lifecycleType === TASK_EVENT_TYPE.DISMISSED) {
     const errorMessage = resolveTaskErrorMessage(payload)
     if (stepId) {
       runEvents.push({

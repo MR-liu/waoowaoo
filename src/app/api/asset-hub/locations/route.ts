@@ -6,11 +6,6 @@ import { ApiError, apiHandler } from '@/lib/api-errors'
 import { attachMediaFieldsToGlobalLocation } from '@/lib/media/attach'
 import { resolveTaskLocale } from '@/lib/task/resolve-locale'
 
-function toObject(value: unknown): Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-    return value as Record<string, unknown>
-}
-
 // 获取用户所有场景（支持 folderId 筛选）
 export const GET = apiHandler(async (request: NextRequest) => {
     // 🔐 统一权限验证
@@ -50,7 +45,6 @@ export const POST = apiHandler(async (request: NextRequest) => {
 
     const body = await request.json()
     const taskLocale = resolveTaskLocale(request, body)
-    const bodyMeta = toObject((body as Record<string, unknown>).meta)
     const acceptLanguage = request.headers.get('accept-language') || ''
     const { name, summary, folderId, artStyle } = body
 
@@ -104,10 +98,6 @@ export const POST = apiHandler(async (request: NextRequest) => {
                 id: location.id,
                 artStyle: artStyle || 'american-comic',
                 locale: taskLocale || undefined,
-                meta: {
-                    ...bodyMeta,
-                    locale: taskLocale || bodyMeta.locale || undefined,
-                },
             })
         }).catch(err => {
             _ulogError('[Locations API] 后台生成任务触发失败:', err)

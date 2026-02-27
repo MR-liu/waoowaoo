@@ -157,6 +157,31 @@ describe('worker reference-to-character', () => {
     await expect(handleReferenceToCharacterTask(job)).rejects.toThrow('Unsupported task type')
   })
 
+  it('extractOnly flow uses payload analysisModel override explicitly', async () => {
+    const job = buildJob(
+      {
+        referenceImageUrl: 'https://example.com/ref.png',
+        extractOnly: true,
+        analysisModel: 'analysis-model-override',
+      },
+      TASK_TYPE.REFERENCE_TO_CHARACTER,
+    )
+
+    const result = await handleReferenceToCharacterTask(job)
+
+    expect(result).toEqual({
+      success: true,
+      description: 'AI_EXTRACTED_DESCRIPTION',
+    })
+    expect(llmClientMock.chatCompletionWithVision).toHaveBeenCalledWith(
+      'user-1',
+      'analysis-model-override',
+      'ANALYSIS_PROMPT',
+      ['https://example.com/ref.png'],
+      { temperature: 0.3, projectId: 'project-1' },
+    )
+  })
+
   it('uses suffix prompt and disables reference-image injection when customDescription is provided', async () => {
     const job = buildJob(
       {

@@ -10,6 +10,27 @@ import { logInfo as _ulogInfo, logError as _ulogError } from '@/lib/logging/core
 
 // 注意：API Key 现在通过参数传入，不再使用环境变量
 
+function toErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message
+    return String(error)
+}
+
+function tryParseFalErrorJson(raw: string, context: string): Record<string, unknown> | null {
+    try {
+        const parsed = JSON.parse(raw)
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            _ulogError(`[FAL Status] ${context} JSON结构无效: expected object`)
+            return null
+        }
+        return parsed as Record<string, unknown>
+    } catch (error: unknown) {
+        _ulogError(
+            `[FAL Status] ${context} JSON解析失败: ${toErrorMessage(error)} raw=${raw.slice(0, 200)}`,
+        )
+        return null
+    }
+}
+
 // ==================== FAL 队列模式 ====================
 
 /**
@@ -158,15 +179,16 @@ export async function queryFalStatus(endpoint: string, requestId: string, apiKey
             if (resultResponse.status === 422) {
                 // 尝试解析具体错误类型
                 let errorMessage = '无法获取结果'
-                try {
-                    const errorJson = JSON.parse(errorText)
-                    const errorType = errorJson.detail?.[0]?.type
-                    if (errorType === 'content_policy_violation') {
-                        errorMessage = '⚠️ 内容审核未通过：生成结果被拦截'
-                    } else if (errorType) {
-                        errorMessage = `FAL 错误: ${errorType}`
-                    }
-                } catch { }
+                const errorJson = tryParseFalErrorJson(errorText, '422错误体')
+                const detail = errorJson?.detail
+                const errorType = Array.isArray(detail)
+                    ? (detail[0] as { type?: unknown } | undefined)?.type
+                    : undefined
+                if (errorType === 'content_policy_violation') {
+                    errorMessage = '⚠️ 内容审核未通过：生成结果被拦截'
+                } else if (typeof errorType === 'string' && errorType) {
+                    errorMessage = `FAL 错误: ${errorType}`
+                }
 
                 _ulogError(`[FAL Status] 422 错误: ${errorMessage}`)
                 return {
@@ -181,12 +203,14 @@ export async function queryFalStatus(endpoint: string, requestId: string, apiKey
             if (resultResponse.status === 500) {
                 // 尝试解析错误详情
                 let errorDetail = '下游服务错误'
-                try {
-                    const errorJson = JSON.parse(errorText)
-                    if (errorJson.detail?.[0]?.type === 'downstream_service_error') {
-                        errorDetail = 'FAL 下游服务错误：上游模型处理失败'
-                    }
-                } catch { }
+                const errorJson = tryParseFalErrorJson(errorText, '500错误体')
+                const detail = errorJson?.detail
+                const errorType = Array.isArray(detail)
+                    ? (detail[0] as { type?: unknown } | undefined)?.type
+                    : undefined
+                if (errorType === 'downstream_service_error') {
+                    errorDetail = 'FAL 下游服务错误：上游模型处理失败'
+                }
 
                 _ulogError(`[FAL Status] 500 错误，标记任务为失败: ${errorDetail}`)
                 return {

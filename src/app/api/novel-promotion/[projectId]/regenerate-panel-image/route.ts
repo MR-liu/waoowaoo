@@ -13,6 +13,28 @@ import { resolveModelSelection } from '@/lib/api-config'
 
 const DEFAULT_CANDIDATE_COUNT = 1
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function toTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function buildRegeneratePanelImageTaskPayload(input: {
+  panelId: string
+  candidateCount: number
+  imageModel: string
+  generationOptions: Record<string, unknown>
+}): Record<string, unknown> {
+  return {
+    panelId: input.panelId,
+    candidateCount: input.candidateCount,
+    imageModel: input.imageModel,
+    ...(Object.keys(input.generationOptions).length > 0 ? { generationOptions: input.generationOptions } : {}),
+  }
+}
+
 export const POST = apiHandler(async (
   request: NextRequest,
   context: { params: Promise<{ projectId: string }> },
@@ -25,9 +47,13 @@ export const POST = apiHandler(async (
 
   const body = await request.json()
   const locale = resolveRequiredTaskLocale(request, body)
-  const panelId = body?.panelId
-  const count = body?.count
-  const candidateCount = Math.max(1, Math.min(4, Number(count ?? DEFAULT_CANDIDATE_COUNT)))
+  const panelId = isRecord(body) ? toTrimmedString(body.panelId) : ''
+  const count = isRecord(body) ? body.count : undefined
+  const rawCandidateCount = Number(count ?? DEFAULT_CANDIDATE_COUNT)
+  const normalizedCandidateCount = Number.isFinite(rawCandidateCount)
+    ? Math.floor(rawCandidateCount)
+    : DEFAULT_CANDIDATE_COUNT
+  const candidateCount = Math.max(1, Math.min(4, normalizedCandidateCount))
 
   if (!panelId) {
     throw new ApiError('INVALID_PARAMS')
@@ -52,11 +78,12 @@ export const POST = apiHandler(async (
     userId: session.user.id,
     modelType: 'image',
     modelKey: projectModelConfig.storyboardModel})
-  const billingPayload = {
-    ...body,
+  const billingPayload = buildRegeneratePanelImageTaskPayload({
+    panelId,
     candidateCount,
     imageModel: projectModelConfig.storyboardModel,
-    ...(Object.keys(capabilityOptions).length > 0 ? { generationOptions: capabilityOptions } : {})}
+    generationOptions: capabilityOptions,
+  })
 
   const hasOutputAtStart = await hasPanelImageOutput(panelId)
 

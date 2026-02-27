@@ -16,6 +16,7 @@ export const TASK_EVENT_TYPE = {
   PROGRESS: 'task.progress',
   COMPLETED: 'task.completed',
   FAILED: 'task.failed',
+  DISMISSED: 'task.dismissed',
 } as const
 
 export type TaskEventType = (typeof TASK_EVENT_TYPE)[keyof typeof TASK_EVENT_TYPE]
@@ -32,6 +33,7 @@ export const TASK_LIFECYCLE_EVENT_TYPES = [
   TASK_EVENT_TYPE.PROCESSING,
   TASK_EVENT_TYPE.COMPLETED,
   TASK_EVENT_TYPE.FAILED,
+  TASK_EVENT_TYPE.DISMISSED,
 ] as const
 
 export type TaskLifecycleEventType = (typeof TASK_LIFECYCLE_EVENT_TYPES)[number]

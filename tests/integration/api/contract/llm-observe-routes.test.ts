@@ -52,6 +52,7 @@ const prismaMock = vi.hoisted(() => ({
     findUnique: vi.fn(async () => ({
       id: 'global-location-1',
       userId: 'user-1',
+      name: 'Global Location',
     })),
   },
 }))
@@ -359,4 +360,927 @@ describe('api contract - llm observe routes (behavior)', () => {
       expect(typeof json.taskId).toBe('string')
     })
   }
+
+  it('story-to-script-stream payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/story-to-script-stream/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/story-to-script-stream',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        content: 'story text',
+        model: 'llm::analysis',
+        reasoning: true,
+        reasoningEffort: 'high',
+        temperature: 0.4,
+        unexpectedKey: 'should-drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      episodeId: 'episode-1',
+      content: 'story text',
+      model: 'llm::analysis',
+      reasoning: true,
+      reasoningEffort: 'high',
+      temperature: 0.4,
+      displayMode: 'detail',
+    })
+    expect(callArg?.body?.unexpectedKey).toBeUndefined()
+  })
+
+  it('asset-hub ai-design-character payload only accepts model override', async () => {
+    const mod = await import('@/app/api/asset-hub/ai-design-character/route')
+    const req = buildMockRequest({
+      path: '/api/asset-hub/ai-design-character',
+      method: 'POST',
+      body: {
+        userInstruction: 'design a heroic character',
+        model: 'llm::analysis-override',
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req)
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      userInstruction: 'design a heroic character',
+      analysisModel: 'llm::analysis-override',
+      displayMode: 'detail',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('asset-hub ai-design-character rejects unsupported reasoning options explicitly', async () => {
+    const mod = await import('@/app/api/asset-hub/ai-design-character/route')
+    const req = buildMockRequest({
+      path: '/api/asset-hub/ai-design-character',
+      method: 'POST',
+      body: {
+        userInstruction: 'design a heroic character',
+        reasoning: true,
+      },
+    })
+
+    const res = await mod.POST(req)
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('ai-create-character payload only accepts model override', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/ai-create-character/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/ai-create-character',
+      method: 'POST',
+      body: {
+        userInstruction: 'create a rebel hero',
+        model: 'llm::analysis-override',
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      userInstruction: 'create a rebel hero',
+      analysisModel: 'llm::analysis-override',
+      displayMode: 'detail',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('ai-create-character rejects unsupported temperature explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/ai-create-character/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/ai-create-character',
+      method: 'POST',
+      body: {
+        userInstruction: 'create a rebel hero',
+        temperature: 0.4,
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('script-to-storyboard-stream payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/script-to-storyboard-stream/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/script-to-storyboard-stream',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        model: 'llm::analysis',
+        reasoning: false,
+        reasoningEffort: 'low',
+        temperature: 0.3,
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      episodeId: 'episode-1',
+      model: 'llm::analysis',
+      reasoning: false,
+      reasoningEffort: 'low',
+      temperature: 0.3,
+      displayMode: 'detail',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('script-to-storyboard-stream rejects invalid reasoningEffort explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/script-to-storyboard-stream/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/script-to-storyboard-stream',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        reasoningEffort: 'ultra',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('story-to-script-stream rejects out-of-range temperature explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/story-to-script-stream/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/story-to-script-stream',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        content: 'story text',
+        temperature: 3.2,
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('analyze route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/analyze/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/analyze',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        content: 'Analyze this chapter',
+        model: 'llm::analysis',
+        reasoning: true,
+        reasoningEffort: 'high',
+        temperature: 0.7,
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      episodeId: 'episode-1',
+      content: 'Analyze this chapter',
+      model: 'llm::analysis',
+      reasoning: true,
+      reasoningEffort: 'high',
+      temperature: 0.7,
+      displayMode: 'detail',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('analyze route rejects non-boolean reasoning explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/analyze/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/analyze',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        content: 'Analyze this chapter',
+        reasoning: 'true',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('clips route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/clips/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/clips',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        model: 'llm::analysis',
+        reasoning: true,
+        reasoningEffort: 'minimal',
+        temperature: 0.1,
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      episodeId: 'episode-1',
+      model: 'llm::analysis',
+      reasoning: true,
+      reasoningEffort: 'minimal',
+      temperature: 0.1,
+      displayMode: 'detail',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('episodes-split route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/episodes/split/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/episodes/split',
+      method: 'POST',
+      body: {
+        content: 'x'.repeat(120),
+        model: 'llm::analysis',
+        reasoning: true,
+        reasoningEffort: 'high',
+        temperature: 0.4,
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      content: 'x'.repeat(120),
+      model: 'llm::analysis',
+      reasoning: true,
+      reasoningEffort: 'high',
+      temperature: 0.4,
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('voice-analyze route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/voice-analyze/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/voice-analyze',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        model: 'llm::analysis',
+        reasoning: false,
+        reasoningEffort: 'medium',
+        temperature: 0.25,
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      episodeId: 'episode-1',
+      model: 'llm::analysis',
+      reasoning: false,
+      reasoningEffort: 'medium',
+      temperature: 0.25,
+      displayMode: 'detail',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('screenplay-conversion route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/screenplay-conversion/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/screenplay-conversion',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        model: 'llm::analysis',
+        reasoning: true,
+        reasoningEffort: 'high',
+        temperature: 0.35,
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      episodeId: 'episode-1',
+      model: 'llm::analysis',
+      reasoning: true,
+      reasoningEffort: 'high',
+      temperature: 0.35,
+      displayMode: 'detail',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('ai-modify-location route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/ai-modify-location/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/ai-modify-location',
+      method: 'POST',
+      body: {
+        locationId: 'location-1',
+        imageIndex: 2.9,
+        currentDescription: 'old location',
+        modifyInstruction: 'add rain',
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      locationId: 'location-1',
+      imageIndex: 2,
+      currentDescription: 'old location',
+      modifyInstruction: 'add rain',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('ai-modify-location route accepts model override only', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/ai-modify-location/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/ai-modify-location',
+      method: 'POST',
+      body: {
+        locationId: 'location-1',
+        currentDescription: 'old location',
+        modifyInstruction: 'add rain',
+        model: 'llm::analysis-override',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      locationId: 'location-1',
+      imageIndex: 0,
+      currentDescription: 'old location',
+      modifyInstruction: 'add rain',
+      analysisModel: 'llm::analysis-override',
+    })
+  })
+
+  it('ai-modify-location route rejects unsupported reasoning options explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/ai-modify-location/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/ai-modify-location',
+      method: 'POST',
+      body: {
+        locationId: 'location-1',
+        currentDescription: 'old location',
+        modifyInstruction: 'add rain',
+        reasoning: true,
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('analyze-global route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/analyze-global/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/analyze-global',
+      method: 'POST',
+      body: {
+        model: 'llm::analysis',
+        reasoning: true,
+        reasoningEffort: 'medium',
+        temperature: 0.5,
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      model: 'llm::analysis',
+      reasoning: true,
+      reasoningEffort: 'medium',
+      temperature: 0.5,
+      displayMode: 'detail',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('analyze-global route rejects out-of-range temperature explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/analyze-global/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/analyze-global',
+      method: 'POST',
+      body: {
+        temperature: 2.5,
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('analyze-shot-variants route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/analyze-shot-variants/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/analyze-shot-variants',
+      method: 'POST',
+      body: {
+        panelId: 'panel-1',
+        episodeId: 'episode-1',
+        model: 'llm::analysis',
+        reasoning: true,
+        reasoningEffort: 'low',
+        temperature: 0.6,
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      panelId: 'panel-1',
+      episodeId: 'episode-1',
+      model: 'llm::analysis',
+      reasoning: true,
+      reasoningEffort: 'low',
+      temperature: 0.6,
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('voice-analyze route rejects invalid model type explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/voice-analyze/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/voice-analyze',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        model: { invalid: true },
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('clips route rejects non-boolean reasoning explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/clips/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/clips',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        reasoning: 'true',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('screenplay-conversion route rejects invalid reasoningEffort explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/screenplay-conversion/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/screenplay-conversion',
+      method: 'POST',
+      body: {
+        episodeId: 'episode-1',
+        reasoningEffort: 'ultra',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('episodes-split route rejects non-boolean reasoning explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/episodes/split/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/episodes/split',
+      method: 'POST',
+      body: {
+        content: 'x'.repeat(120),
+        reasoning: 'true',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('analyze-shot-variants route rejects out-of-range temperature explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/analyze-shot-variants/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/analyze-shot-variants',
+      method: 'POST',
+      body: {
+        panelId: 'panel-1',
+        temperature: -0.1,
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('ai-modify-appearance route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/ai-modify-appearance/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/ai-modify-appearance',
+      method: 'POST',
+      body: {
+        characterId: 'character-1',
+        appearanceId: 'appearance-1',
+        currentDescription: 'old appearance',
+        modifyInstruction: 'add armor',
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      characterId: 'character-1',
+      appearanceId: 'appearance-1',
+      currentDescription: 'old appearance',
+      modifyInstruction: 'add armor',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('ai-modify-appearance route accepts model override only', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/ai-modify-appearance/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/ai-modify-appearance',
+      method: 'POST',
+      body: {
+        characterId: 'character-1',
+        appearanceId: 'appearance-1',
+        currentDescription: 'old appearance',
+        modifyInstruction: 'add armor',
+        model: 'llm::analysis-override',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      characterId: 'character-1',
+      appearanceId: 'appearance-1',
+      currentDescription: 'old appearance',
+      modifyInstruction: 'add armor',
+      analysisModel: 'llm::analysis-override',
+    })
+  })
+
+  it('ai-modify-shot-prompt route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/ai-modify-shot-prompt/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/ai-modify-shot-prompt',
+      method: 'POST',
+      body: {
+        panelId: 'panel-1',
+        episodeId: 'episode-1',
+        currentPrompt: 'old prompt',
+        currentVideoPrompt: 'old video prompt',
+        modifyInstruction: 'more dramatic angle',
+        referencedAssets: [{ id: 'asset-1' }, 'invalid'],
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      panelId: 'panel-1',
+      episodeId: 'episode-1',
+      currentPrompt: 'old prompt',
+      currentVideoPrompt: 'old video prompt',
+      modifyInstruction: 'more dramatic angle',
+      referencedAssets: [{ id: 'asset-1' }],
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('ai-modify-shot-prompt route rejects unsupported temperature explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/ai-modify-shot-prompt/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/ai-modify-shot-prompt',
+      method: 'POST',
+      body: {
+        currentPrompt: 'old prompt',
+        modifyInstruction: 'more dramatic angle',
+        temperature: 0.4,
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('character-profile-confirm route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/character-profile/confirm/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/character-profile/confirm',
+      method: 'POST',
+      body: {
+        characterId: 'character-1',
+        profileData: { age_range: 'adult' },
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      characterId: 'character-1',
+      profileData: { age_range: 'adult' },
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('character-profile-confirm route accepts model override only', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/character-profile/confirm/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/character-profile/confirm',
+      method: 'POST',
+      body: {
+        characterId: 'character-1',
+        model: 'llm::analysis-override',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      characterId: 'character-1',
+      analysisModel: 'llm::analysis-override',
+    })
+  })
+
+  it('character-profile-batch-confirm route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/character-profile/batch-confirm/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/character-profile/batch-confirm',
+      method: 'POST',
+      body: {
+        force: true,
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({ force: true })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('character-profile-batch-confirm route rejects unsupported temperature explicitly', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/character-profile/batch-confirm/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/character-profile/batch-confirm',
+      method: 'POST',
+      body: {
+        temperature: 0.5,
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('reference-to-character route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/reference-to-character/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/reference-to-character',
+      method: 'POST',
+      body: {
+        referenceImageUrls: ['https://example.com/a.png', 'https://example.com/b.png'],
+        isBackgroundJob: true,
+        characterId: 'character-1',
+        appearanceId: 'appearance-1',
+        extractOnly: true,
+        customDescription: 'custom desc',
+        characterName: 'new name',
+        artStyle: 'anime',
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      referenceImageUrls: ['https://example.com/a.png', 'https://example.com/b.png'],
+      isBackgroundJob: true,
+      characterId: 'character-1',
+      appearanceId: 'appearance-1',
+      extractOnly: true,
+      customDescription: 'custom desc',
+      characterName: 'new name',
+      artStyle: 'anime',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('reference-to-character route accepts model override only', async () => {
+    const mod = await import('@/app/api/novel-promotion/[projectId]/reference-to-character/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/reference-to-character',
+      method: 'POST',
+      body: {
+        referenceImageUrl: 'https://example.com/ref.png',
+        model: 'llm::analysis-override',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      referenceImageUrl: 'https://example.com/ref.png',
+      analysisModel: 'llm::analysis-override',
+    })
+  })
+
+  it('asset-hub reference-to-character route payload uses whitelist contract', async () => {
+    const mod = await import('@/app/api/asset-hub/reference-to-character/route')
+    const req = buildMockRequest({
+      path: '/api/asset-hub/reference-to-character',
+      method: 'POST',
+      body: {
+        referenceImageUrl: 'https://example.com/ref.png',
+        extractOnly: true,
+        customDescription: 'custom desc',
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req)
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      referenceImageUrl: 'https://example.com/ref.png',
+      extractOnly: true,
+      customDescription: 'custom desc',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('asset-hub reference-to-character route rejects unsupported reasoning options explicitly', async () => {
+    const mod = await import('@/app/api/asset-hub/reference-to-character/route')
+    const req = buildMockRequest({
+      path: '/api/asset-hub/reference-to-character',
+      method: 'POST',
+      body: {
+        referenceImageUrl: 'https://example.com/ref.png',
+        reasoning: true,
+      },
+    })
+
+    const res = await mod.POST(req)
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('asset-hub ai-modify-character route payload uses normalized contract', async () => {
+    const mod = await import('@/app/api/asset-hub/ai-modify-character/route')
+    const req = buildMockRequest({
+      path: '/api/asset-hub/ai-modify-character',
+      method: 'POST',
+      body: {
+        characterId: ' global-character-1 ',
+        appearanceIndex: 1.8,
+        currentDescription: ' old desc ',
+        modifyInstruction: ' make it darker ',
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req)
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      characterId: 'global-character-1',
+      appearanceIndex: 1,
+      currentDescription: 'old desc',
+      modifyInstruction: 'make it darker',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
+
+  it('asset-hub ai-modify-character route accepts model override only', async () => {
+    const mod = await import('@/app/api/asset-hub/ai-modify-character/route')
+    const req = buildMockRequest({
+      path: '/api/asset-hub/ai-modify-character',
+      method: 'POST',
+      body: {
+        characterId: 'global-character-1',
+        appearanceIndex: 0,
+        currentDescription: 'old desc',
+        modifyInstruction: 'make it darker',
+        model: 'llm::analysis-override',
+      },
+    })
+
+    const res = await mod.POST(req)
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      characterId: 'global-character-1',
+      appearanceIndex: 0,
+      currentDescription: 'old desc',
+      modifyInstruction: 'make it darker',
+      analysisModel: 'llm::analysis-override',
+    })
+  })
+
+  it('asset-hub ai-modify-character route rejects unsupported reasoning options explicitly', async () => {
+    const mod = await import('@/app/api/asset-hub/ai-modify-character/route')
+    const req = buildMockRequest({
+      path: '/api/asset-hub/ai-modify-character',
+      method: 'POST',
+      body: {
+        characterId: 'global-character-1',
+        appearanceIndex: 0,
+        currentDescription: 'old desc',
+        modifyInstruction: 'make it darker',
+        reasoning: true,
+      },
+    })
+
+    const res = await mod.POST(req)
+    expect(res.status).toBe(400)
+    expect(maybeSubmitLLMTaskMock).not.toHaveBeenCalled()
+  })
+
+  it('asset-hub ai-modify-location route payload uses normalized contract', async () => {
+    const mod = await import('@/app/api/asset-hub/ai-modify-location/route')
+    const req = buildMockRequest({
+      path: '/api/asset-hub/ai-modify-location',
+      method: 'POST',
+      body: {
+        locationId: ' global-location-1 ',
+        imageIndex: 2.9,
+        currentDescription: ' old location desc ',
+        modifyInstruction: ' add fog ',
+        ignored: 'drop',
+      },
+    })
+
+    const res = await mod.POST(req)
+    expect(res.status).toBe(200)
+    const callArg = maybeSubmitLLMTaskMock.mock.calls.at(-1)?.[0] as { body?: Record<string, unknown> } | undefined
+    expect(callArg?.body).toEqual({
+      locationId: 'global-location-1',
+      locationName: 'Global Location',
+      imageIndex: 2,
+      currentDescription: 'old location desc',
+      modifyInstruction: 'add fog',
+    })
+    expect(callArg?.body?.ignored).toBeUndefined()
+  })
 })

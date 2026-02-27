@@ -135,8 +135,13 @@ describe('worker character-profile behavior', () => {
   })
 
   it('confirm profile success -> creates appearance and marks profileConfirmed', async () => {
-    const job = buildJob(TASK_TYPE.CHARACTER_PROFILE_CONFIRM, { characterId: 'character-1' })
+    const job = buildJob(TASK_TYPE.CHARACTER_PROFILE_CONFIRM, {
+      characterId: 'character-1',
+      analysisModel: 'llm::analysis-override',
+    })
     const result = await handleCharacterProfileTask(job)
+
+    expect(helperMock.resolveProjectModel).toHaveBeenCalledWith('project-1', 'llm::analysis-override')
 
     expect(prismaMock.characterAppearance.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -162,13 +167,16 @@ describe('worker character-profile behavior', () => {
   })
 
   it('batch confirm -> loops through all unconfirmed characters and returns count', async () => {
-    const job = buildJob(TASK_TYPE.CHARACTER_PROFILE_BATCH_CONFIRM, {})
+    const job = buildJob(TASK_TYPE.CHARACTER_PROFILE_BATCH_CONFIRM, {
+      analysisModel: 'llm::analysis-override',
+    })
     const result = await handleCharacterProfileTask(job)
 
     expect(result).toEqual({
       success: true,
       count: 2,
     })
+    expect(helperMock.resolveProjectModel).toHaveBeenCalledWith('project-1', 'llm::analysis-override')
     expect(prismaMock.characterAppearance.create).toHaveBeenCalledTimes(2)
   })
 })

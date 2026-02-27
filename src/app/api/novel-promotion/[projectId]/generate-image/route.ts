@@ -12,9 +12,38 @@ import {
   hasLocationImageOutput
 } from '@/lib/task/has-output'
 
-function toNumber(value: unknown) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function toTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function toInteger(value: unknown): number | null {
   const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : null
+  if (!Number.isFinite(parsed)) return null
+  return Math.floor(parsed)
+}
+
+function buildGenerateImageTaskPayload(input: unknown): Record<string, unknown> {
+  if (!isRecord(input)) return {}
+
+  const type = toTrimmedString(input.type)
+  const id = toTrimmedString(input.id)
+  const appearanceId = toTrimmedString(input.appearanceId)
+  const appearanceIndex = toInteger(input.appearanceIndex)
+  const imageIndex = toInteger(input.imageIndex)
+  const descriptionIndex = toInteger(input.descriptionIndex)
+
+  return {
+    ...(type ? { type } : {}),
+    ...(id ? { id } : {}),
+    ...(appearanceId ? { appearanceId } : {}),
+    ...(appearanceIndex !== null ? { appearanceIndex } : {}),
+    ...(imageIndex !== null ? { imageIndex } : {}),
+    ...(descriptionIndex !== null ? { descriptionIndex } : {}),
+  }
 }
 
 export const POST = apiHandler(async (
@@ -28,10 +57,11 @@ export const POST = apiHandler(async (
   const { session } = authResult
 
   const body = await request.json()
+  const taskPayload = buildGenerateImageTaskPayload(body)
   const locale = resolveRequiredTaskLocale(request, body)
-  const type = body?.type
-  const id = body?.id
-  const appearanceId = body?.appearanceId
+  const type = typeof taskPayload.type === 'string' ? taskPayload.type : ''
+  const id = typeof taskPayload.id === 'string' ? taskPayload.id : ''
+  const appearanceId = typeof taskPayload.appearanceId === 'string' ? taskPayload.appearanceId : ''
 
   if (!type || !id) {
     throw new ApiError('INVALID_PARAMS')
@@ -48,12 +78,17 @@ export const POST = apiHandler(async (
   if (!targetId) {
     throw new ApiError('INVALID_PARAMS')
   }
-  const imageIndex = toNumber(body?.imageIndex)
+  const appearanceIndex = typeof taskPayload.appearanceIndex === 'number'
+    ? taskPayload.appearanceIndex
+    : null
+  const imageIndex = typeof taskPayload.imageIndex === 'number'
+    ? taskPayload.imageIndex
+    : null
   const hasOutputAtStart = type === 'character'
     ? await hasCharacterAppearanceOutput({
       appearanceId: targetId,
       characterId: id,
-      appearanceIndex: toNumber(body?.appearanceIndex)
+      appearanceIndex
     })
     : await hasLocationImageOutput({
       locationId: id,
@@ -71,7 +106,7 @@ export const POST = apiHandler(async (
       projectId,
       userId: session.user.id,
       imageModel,
-      basePayload: body,
+      basePayload: taskPayload,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Image model capability not configured'
@@ -92,4 +127,3 @@ export const POST = apiHandler(async (
 
   return NextResponse.json(result)
 })
-

@@ -16,6 +16,7 @@ import {
   readText,
 } from './screenplay-convert-helpers'
 import { getPromptTemplate, PROMPT_IDS } from '@/lib/prompt-i18n'
+import { resolveLLMRuntimeOptionOverridesFromPayload } from './llm-runtime-options'
 
 const MAX_SCREENPLAY_ATTEMPTS = 2
 
@@ -55,6 +56,11 @@ export async function handleScreenplayConvertTask(job: Job<TaskJobData>) {
   if (!novelData.analysisModel) {
     throw new Error('analysisModel is not configured')
   }
+  const runtimeOptions = resolveLLMRuntimeOptionOverridesFromPayload({
+    payload,
+    fallbackModel: novelData.analysisModel,
+    defaultReasoning: true,
+  })
 
   const episode = await prisma.novelPromotionEpisode.findUnique({
     where: { id: episodeId },
@@ -133,7 +139,7 @@ export async function handleScreenplayConvertTask(job: Job<TaskJobData>) {
       logAIAnalysis(job.data.userId, 'worker', projectId, project.name, {
         action: `SCREENPLAY_CONVERT_PROMPT`,
         input: { stepId, stepTitle, prompt },
-        model: novelData.analysisModel,
+        model: runtimeOptions.model,
       })
 
       let screenplayStored = false
@@ -147,10 +153,12 @@ export async function handleScreenplayConvertTask(job: Job<TaskJobData>) {
                 async () =>
                   await chatCompletion(
                     job.data.userId,
-                    novelData.analysisModel!,
+                    runtimeOptions.model,
                     [{ role: 'user', content: prompt }],
                     {
-                      reasoning: true,
+                      ...(typeof runtimeOptions.temperature === 'number' ? { temperature: runtimeOptions.temperature } : {}),
+                      ...(typeof runtimeOptions.reasoning === 'boolean' ? { reasoning: runtimeOptions.reasoning } : {}),
+                      ...(runtimeOptions.reasoningEffort ? { reasoningEffort: runtimeOptions.reasoningEffort } : {}),
                       projectId,
                       action: 'screenplay_conversion',
                       streamStepId: attempt === 1 ? stepId : `${stepId}_retry_${attempt}`,
@@ -180,7 +188,7 @@ export async function handleScreenplayConvertTask(job: Job<TaskJobData>) {
               rawText: responseText,
               textLength: responseText.length,
             },
-            model: novelData.analysisModel,
+            model: runtimeOptions.model,
           })
 
           const screenplay = parseScreenplayPayload(responseText)
