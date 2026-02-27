@@ -146,98 +146,114 @@ export const GET = apiHandler(async (
   _ulogInfo(`Preparing to download ${indexedImages.length} images for project ${projectId}`)
 
   const archive = archiver('zip', { zlib: { level: 9 } })
-
-  const stream = new ReadableStream({
-    start(controller) {
-      archive.on('data', (chunk) => controller.enqueue(chunk))
-      archive.on('end', () => controller.close())
-      archive.on('error', (err) => controller.error(err))
-      processImages()
-    }
+  const archiveFinished = new Promise<void>((resolve, reject) => {
+    archive.on('end', () => resolve())
+    archive.on('error', (err) => reject(err))
   })
+  const chunks: Uint8Array[] = []
+  archive.on('data', (chunk) => {
+    chunks.push(chunk)
+  })
+  const isLocal = process.env.STORAGE_TYPE === 'local'
+  const failedDownloads: Array<{ index: number; reason: string }> = []
 
-  async function processImages() {
-    const isLocal = process.env.STORAGE_TYPE === 'local'
+  for (const image of indexedImages) {
+    try {
+      _ulogInfo(`Downloading image ${image.index}: ${image.imageUrl}`)
 
-    for (const image of indexedImages) {
-      try {
-        _ulogInfo(`Downloading image ${image.index}: ${image.imageUrl}`)
+      let imageData: Buffer
+      let extension = 'png'
+      const storageKey = await resolveStorageKeyFromMediaValue(image.imageUrl)
 
-        let imageData: Buffer
-        let extension = 'png'
-        const storageKey = await resolveStorageKeyFromMediaValue(image.imageUrl)
+      if (image.imageUrl.startsWith('http://') || image.imageUrl.startsWith('https://')) {
+        // 外部 URL，直接下载
+        const response = await fetch(toFetchableUrl(image.imageUrl))
+        if (!response.ok) {
+          throw new Error(`Failed to fetch: ${response.statusText}`)
+        }
+        const arrayBuffer = await response.arrayBuffer()
+        imageData = Buffer.from(arrayBuffer)
 
-        if (image.imageUrl.startsWith('http://') || image.imageUrl.startsWith('https://')) {
-          // 外部 URL，直接下载
-          const response = await fetch(toFetchableUrl(image.imageUrl))
+        const contentType = response.headers.get('content-type')
+        if (contentType?.includes('jpeg') || contentType?.includes('jpg')) {
+          extension = 'jpg'
+        } else if (contentType?.includes('webp')) {
+          extension = 'webp'
+        }
+      } else if (storageKey) {
+        if (isLocal) {
+          // 本地存储：通过文件服务 API 获取
+          const { getSignedUrl } = await import('@/lib/cos')
+          const localUrl = toFetchableUrl(getSignedUrl(storageKey))
+          const response = await fetch(localUrl)
           if (!response.ok) {
-            throw new Error(`Failed to fetch: ${response.statusText}`)
+            throw new Error(`Failed to fetch local file: ${response.statusText}`)
           }
-          const arrayBuffer = await response.arrayBuffer()
-          imageData = Buffer.from(arrayBuffer)
-
-          const contentType = response.headers.get('content-type')
-          if (contentType?.includes('jpeg') || contentType?.includes('jpg')) {
-            extension = 'jpg'
-          } else if (contentType?.includes('webp')) {
-            extension = 'webp'
-          }
-        } else if (storageKey) {
-          if (isLocal) {
-            // 本地存储：通过文件服务 API 获取
-            const { getSignedUrl } = await import('@/lib/cos')
-            const localUrl = toFetchableUrl(getSignedUrl(storageKey))
-            const response = await fetch(localUrl)
-            if (!response.ok) {
-              throw new Error(`Failed to fetch local file: ${response.statusText}`)
-            }
-            imageData = Buffer.from(await response.arrayBuffer())
-          } else {
-            // COS：从 COS 下载
-            const cos = getCOSClient()
-            imageData = await new Promise<Buffer>((resolve, reject) => {
-              cos.getObject(
-                {
-                  Bucket: process.env.COS_BUCKET!,
-                  Region: process.env.COS_REGION!,
-                  Key: storageKey
-                },
-                (err, data) => {
-                  if (err) reject(err)
-                  else resolve(data.Body as Buffer)
-                }
-              )
-            })
-          }
-
-          const keyExt = storageKey.split('.').pop()?.toLowerCase()
-          if (keyExt && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(keyExt)) {
-            extension = keyExt === 'jpeg' ? 'jpg' : keyExt
-          }
+          imageData = Buffer.from(await response.arrayBuffer())
         } else {
-          const response = await fetch(toFetchableUrl(image.imageUrl))
-          if (!response.ok) {
-            throw new Error(`Failed to fetch: ${response.statusText}`)
-          }
-          const arrayBuffer = await response.arrayBuffer()
-          imageData = Buffer.from(arrayBuffer)
+          // COS：从 COS 下载
+          const cos = getCOSClient()
+          imageData = await new Promise<Buffer>((resolve, reject) => {
+            cos.getObject(
+              {
+                Bucket: process.env.COS_BUCKET!,
+                Region: process.env.COS_REGION!,
+                Key: storageKey
+              },
+              (err, data) => {
+                if (err) reject(err)
+                else resolve(data.Body as Buffer)
+              }
+            )
+          })
         }
 
-        // 文件名使用描述，清理非法字符
-        const safeDesc = image.description.slice(0, 50).replace(/[\\/:*?"<>|]/g, '_')
-        const fileName = `${String(image.index).padStart(3, '0')}_${safeDesc}.${extension}`
-        archive.append(imageData, { name: fileName })
-        _ulogInfo(`Added ${fileName} to archive`)
-      } catch (error) {
-        _ulogError(`Failed to download image ${image.index}:`, error)
+        const keyExt = storageKey.split('.').pop()?.toLowerCase()
+        if (keyExt && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(keyExt)) {
+          extension = keyExt === 'jpeg' ? 'jpg' : keyExt
+        }
+      } else {
+        const response = await fetch(toFetchableUrl(image.imageUrl))
+        if (!response.ok) {
+          throw new Error(`Failed to fetch: ${response.statusText}`)
+        }
+        const arrayBuffer = await response.arrayBuffer()
+        imageData = Buffer.from(arrayBuffer)
       }
-    }
 
-    await archive.finalize()
-    _ulogInfo('Archive finalized')
+      // 文件名使用描述，清理非法字符
+      const safeDesc = image.description.slice(0, 50).replace(/[\\/:*?"<>|]/g, '_')
+      const fileName = `${String(image.index).padStart(3, '0')}_${safeDesc}.${extension}`
+      archive.append(imageData, { name: fileName })
+      _ulogInfo(`Added ${fileName} to archive`)
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error)
+      failedDownloads.push({ index: image.index, reason })
+      _ulogError(`Failed to download image ${image.index}:`, error)
+    }
   }
 
-  return new Response(stream, {
+  if (failedDownloads.length > 0) {
+    throw new ApiError('EXTERNAL_ERROR', {
+      message: `图片打包失败：${failedDownloads.length}/${indexedImages.length} 个文件下载失败`,
+      total: indexedImages.length,
+      failed: failedDownloads,
+    })
+  }
+
+  await archive.finalize()
+  _ulogInfo('Archive finalized')
+  await archiveFinished
+
+  const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0)
+  const result = new Uint8Array(totalLength)
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.length
+  }
+
+  return new Response(result, {
     headers: {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${encodeURIComponent(project.name)}_images.zip"`

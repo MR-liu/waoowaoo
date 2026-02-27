@@ -52,94 +52,110 @@ export const GET = apiHandler(async (
   _ulogInfo(`Preparing to download ${voiceLines.length} voice lines for project ${projectId}`)
 
   const archive = archiver('zip', { zlib: { level: 9 } })
-
-  const stream = new ReadableStream({
-    start(controller) {
-      archive.on('data', (chunk) => controller.enqueue(chunk))
-      archive.on('end', () => controller.close())
-      archive.on('error', (err) => controller.error(err))
-      processVoices()
-    }
+  const archiveFinished = new Promise<void>((resolve, reject) => {
+    archive.on('end', () => resolve())
+    archive.on('error', (err) => reject(err))
   })
+  const chunks: Uint8Array[] = []
+  archive.on('data', (chunk) => {
+    chunks.push(chunk)
+  })
+  const isLocal = process.env.STORAGE_TYPE === 'local'
+  const failedDownloads: Array<{ lineIndex: number; reason: string }> = []
 
-  async function processVoices() {
-    const isLocal = process.env.STORAGE_TYPE === 'local'
+  for (const line of voiceLines) {
+    try {
+      if (!line.audioUrl) continue
 
-    for (const line of voiceLines) {
-      try {
-        if (!line.audioUrl) continue
+      _ulogInfo(`Downloading voice ${line.lineIndex}: ${line.audioUrl}`)
 
-        _ulogInfo(`Downloading voice ${line.lineIndex}: ${line.audioUrl}`)
+      let audioData: Buffer
+      const storageKey = await resolveStorageKeyFromMediaValue(line.audioUrl)
 
-        let audioData: Buffer
-        const storageKey = await resolveStorageKeyFromMediaValue(line.audioUrl)
-
-        if (line.audioUrl.startsWith('http://') || line.audioUrl.startsWith('https://')) {
-          const response = await fetch(toFetchableUrl(line.audioUrl))
-          if (!response.ok) {
-            throw new Error(`Failed to fetch: ${response.statusText}`)
-          }
-          const arrayBuffer = await response.arrayBuffer()
-          audioData = Buffer.from(arrayBuffer)
-        } else if (storageKey) {
-          if (isLocal) {
-            const { getSignedUrl } = await import('@/lib/cos')
-            const localUrl = toFetchableUrl(getSignedUrl(storageKey))
-            const response = await fetch(localUrl)
-            if (!response.ok) {
-              throw new Error(`Failed to fetch local file: ${response.statusText}`)
-            }
-            audioData = Buffer.from(await response.arrayBuffer())
-          } else {
-            const cos = getCOSClient()
-            audioData = await new Promise<Buffer>((resolve, reject) => {
-              cos.getObject(
-                {
-                  Bucket: process.env.COS_BUCKET!,
-                  Region: process.env.COS_REGION!,
-                  Key: storageKey
-                },
-                (err, data) => {
-                  if (err) reject(err)
-                  else resolve(data.Body as Buffer)
-                }
-              )
-            })
-          }
-        } else {
-          const response = await fetch(toFetchableUrl(line.audioUrl))
-          if (!response.ok) {
-            throw new Error(`Failed to fetch: ${response.statusText}`)
-          }
-          const arrayBuffer = await response.arrayBuffer()
-          audioData = Buffer.from(arrayBuffer)
+      if (line.audioUrl.startsWith('http://') || line.audioUrl.startsWith('https://')) {
+        const response = await fetch(toFetchableUrl(line.audioUrl))
+        if (!response.ok) {
+          throw new Error(`Failed to fetch: ${response.statusText}`)
         }
-
-        // 清理发言人名称中的非法字符
-        const safeSpeaker = line.speaker.replace(/[\\/:*?"<>|]/g, '_')
-
-        // 截取台词内容前15字作为文件名的一部分
-        const safeContent = line.content.slice(0, 15).replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_')
-
-        // 确定文件扩展名
-        const extSource = storageKey || line.audioUrl
-        const ext = extSource.endsWith('.wav') ? 'wav' : 'mp3'
-
-        // 文件名格式: 序号_名字_语音内容.mp3（按绝对顺序排列，不按发言人分文件夹）
-        const fileName = `${String(line.lineIndex).padStart(3, '0')}_${safeSpeaker}_${safeContent}.${ext}`
-
-        archive.append(audioData, { name: fileName })
-        _ulogInfo(`Added ${fileName} to archive`)
-      } catch (error) {
-        _ulogError(`Failed to download voice line ${line.lineIndex}:`, error)
+        const arrayBuffer = await response.arrayBuffer()
+        audioData = Buffer.from(arrayBuffer)
+      } else if (storageKey) {
+        if (isLocal) {
+          const { getSignedUrl } = await import('@/lib/cos')
+          const localUrl = toFetchableUrl(getSignedUrl(storageKey))
+          const response = await fetch(localUrl)
+          if (!response.ok) {
+            throw new Error(`Failed to fetch local file: ${response.statusText}`)
+          }
+          audioData = Buffer.from(await response.arrayBuffer())
+        } else {
+          const cos = getCOSClient()
+          audioData = await new Promise<Buffer>((resolve, reject) => {
+            cos.getObject(
+              {
+                Bucket: process.env.COS_BUCKET!,
+                Region: process.env.COS_REGION!,
+                Key: storageKey
+              },
+              (err, data) => {
+                if (err) reject(err)
+                else resolve(data.Body as Buffer)
+              }
+            )
+          })
+        }
+      } else {
+        const response = await fetch(toFetchableUrl(line.audioUrl))
+        if (!response.ok) {
+          throw new Error(`Failed to fetch: ${response.statusText}`)
+        }
+        const arrayBuffer = await response.arrayBuffer()
+        audioData = Buffer.from(arrayBuffer)
       }
-    }
 
-    await archive.finalize()
-    _ulogInfo('Archive finalized')
+      // 清理发言人名称中的非法字符
+      const safeSpeaker = line.speaker.replace(/[\\/:*?"<>|]/g, '_')
+
+      // 截取台词内容前15字作为文件名的一部分
+      const safeContent = line.content.slice(0, 15).replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_')
+
+      // 确定文件扩展名
+      const extSource = storageKey || line.audioUrl
+      const ext = extSource.endsWith('.wav') ? 'wav' : 'mp3'
+
+      // 文件名格式: 序号_名字_语音内容.mp3（按绝对顺序排列，不按发言人分文件夹）
+      const fileName = `${String(line.lineIndex).padStart(3, '0')}_${safeSpeaker}_${safeContent}.${ext}`
+
+      archive.append(audioData, { name: fileName })
+      _ulogInfo(`Added ${fileName} to archive`)
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error)
+      failedDownloads.push({ lineIndex: line.lineIndex, reason })
+      _ulogError(`Failed to download voice line ${line.lineIndex}:`, error)
+    }
   }
 
-  return new Response(stream, {
+  if (failedDownloads.length > 0) {
+    throw new ApiError('EXTERNAL_ERROR', {
+      message: `配音打包失败：${failedDownloads.length}/${voiceLines.length} 个文件下载失败`,
+      total: voiceLines.length,
+      failed: failedDownloads,
+    })
+  }
+
+  await archive.finalize()
+  _ulogInfo('Archive finalized')
+  await archiveFinished
+
+  const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0)
+  const result = new Uint8Array(totalLength)
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.length
+  }
+
+  return new Response(result, {
     headers: {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${encodeURIComponent(project.name)}_voices.zip"`
