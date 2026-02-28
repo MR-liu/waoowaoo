@@ -12,6 +12,7 @@ interface StoryboardToolbarProps {
   isDownloadingImages: boolean
   runningCount: number
   pendingPanelCount: number
+  concurrencyLimit: number
   isBatchSubmitting: boolean
   addingStoryboardGroup: boolean
   addingStoryboardGroupState: TaskPresentationState | null
@@ -27,6 +28,7 @@ export default function StoryboardToolbar({
   isDownloadingImages,
   runningCount,
   pendingPanelCount,
+  concurrencyLimit,
   isBatchSubmitting,
   addingStoryboardGroup,
   addingStoryboardGroupState,
@@ -44,6 +46,7 @@ export default function StoryboardToolbar({
         isDownloadingImages={isDownloadingImages}
         runningCount={runningCount}
         pendingPanelCount={pendingPanelCount}
+        concurrencyLimit={concurrencyLimit}
         isBatchSubmitting={isBatchSubmitting}
         onDownloadAllImages={onDownloadAllImages}
         onGenerateAllPanels={onGenerateAllPanels}

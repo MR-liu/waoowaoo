@@ -51,6 +51,7 @@ interface UseStoryboardPanelAssetActionsProps {
     storyboardId: string,
     updatePanelEdit: (panelId: string, panel: StoryboardPanel, updates: Partial<PanelEditData>) => void,
   ) => void
+  storyboardModel?: string
   assetPickerPanel: {
     panelId: string
     type: 'character' | 'location'
@@ -77,6 +78,7 @@ export function useStoryboardPanelAssetActions({
   addCharacterToPanel,
   removeCharacterFromPanel,
   setPanelLocation,
+  storyboardModel,
   assetPickerPanel,
   setAssetPickerPanel,
 }: UseStoryboardPanelAssetActionsProps) {
@@ -166,10 +168,11 @@ export function useStoryboardPanelAssetActions({
     },
     [setPanelLocation, updatePanelEdit],
   )
-  const { runningCount, pendingPanelCount, handleGenerateAllPanels } =
+  const { runningCount, pendingPanelCount, concurrencyLimit, handleGenerateAllPanels } =
     useStoryboardBatchPanelGeneration({
       sortedStoryboards,
       submittingPanelImageIds,
+      storyboardModel,
       getTextPanels,
       regeneratePanelImage,
       setIsEpisodeBatchSubmitting,
@@ -185,6 +188,7 @@ export function useStoryboardPanelAssetActions({
     handleRemoveLocation,
     runningCount,
     pendingPanelCount,
+    concurrencyLimit,
     handleGenerateAllPanels,
   }
 }

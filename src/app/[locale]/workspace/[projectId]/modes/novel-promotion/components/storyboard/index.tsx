@@ -17,6 +17,7 @@ interface StoryboardStageProps {
   storyboards: NovelPromotionStoryboard[]
   clips: NovelPromotionClip[]
   videoRatio: string
+  storyboardModel?: string
   onBack: () => void
   onNext: () => void
   isTransitioning?: boolean
@@ -28,6 +29,7 @@ export default function StoryboardStage({
   storyboards: initialStoryboards,
   clips,
   videoRatio,
+  storyboardModel,
   onBack,
   onNext,
   isTransitioning = false,
@@ -37,6 +39,7 @@ export default function StoryboardStage({
     episodeId,
     initialStoryboards,
     clips,
+    storyboardModel,
     isTransitioning,
   })
 
@@ -115,6 +118,7 @@ export default function StoryboardStage({
     transitioningState,
     runningCount,
     pendingPanelCount,
+    concurrencyLimit,
     handleGenerateAllPanels,
   } = controller
 
@@ -155,6 +159,7 @@ export default function StoryboardStage({
           isDownloadingImages={isDownloadingImages}
           runningCount={runningCount}
           pendingPanelCount={pendingPanelCount}
+          concurrencyLimit={concurrencyLimit}
           isBatchSubmitting={isEpisodeBatchSubmitting}
           addingStoryboardGroup={addingStoryboardGroup}
           addingStoryboardGroupState={addingStoryboardGroupState}

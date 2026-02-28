@@ -26,6 +26,7 @@ interface UseStoryboardStageControllerProps {
   episodeId: string
   initialStoryboards: NovelPromotionStoryboard[]
   clips: NovelPromotionClip[]
+  storyboardModel?: string
   isTransitioning: boolean
 }
 
@@ -34,6 +35,7 @@ export function useStoryboardStageController({
   episodeId,
   initialStoryboards,
   clips,
+  storyboardModel,
   isTransitioning,
 }: UseStoryboardStageControllerProps) {
   const isRunningPhase = useCallback((phase: string | null | undefined) => {
@@ -161,6 +163,7 @@ export function useStoryboardStageController({
     handleRemoveLocation,
     runningCount,
     pendingPanelCount,
+    concurrencyLimit,
     handleGenerateAllPanels,
   } = useStoryboardPanelAssetActions({
     clips,
@@ -172,6 +175,7 @@ export function useStoryboardStageController({
     editingPanel,
     setEditingPanel,
     setIsEpisodeBatchSubmitting,
+    storyboardModel,
     getTextPanels,
     getPanelEditData,
     updatePanelEdit,
@@ -204,6 +208,6 @@ export function useStoryboardStageController({
     getDefaultAssetsForClip, handleEditSubmit, handlePanelUpdate, handleAddCharacter, handleSetLocation, handleRemoveCharacter, handleRemoveLocation,
     retrySave,
     updatePhotographyPlanMutation, updatePanelActingNotesMutation,
-    addingStoryboardGroupState, transitioningState, runningCount, pendingPanelCount, handleGenerateAllPanels,
+    addingStoryboardGroupState, transitioningState, runningCount, pendingPanelCount, concurrencyLimit, handleGenerateAllPanels,
   }
 }

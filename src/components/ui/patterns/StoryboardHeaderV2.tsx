@@ -10,6 +10,7 @@ export interface StoryboardHeaderV2Props {
   isDownloadingImages: boolean
   runningCount: number
   pendingPanelCount: number
+  concurrencyLimit?: number
   isBatchSubmitting: boolean
   onDownloadAllImages: () => void
   onGenerateAllPanels: () => void
@@ -23,6 +24,7 @@ export default function StoryboardHeaderV2({
   isDownloadingImages,
   runningCount,
   pendingPanelCount,
+  concurrencyLimit = 10,
   isBatchSubmitting,
   onDownloadAllImages,
   onGenerateAllPanels,
@@ -47,7 +49,7 @@ export default function StoryboardHeaderV2({
               {t('header.generatingStatus', { count: runningCount })}
             </GlassChip>
           ) : null}
-          <GlassChip tone="neutral">{t('header.concurrencyLimit', { count: 10 })}</GlassChip>
+          <GlassChip tone="neutral">{t('header.concurrencyLimit', { count: concurrencyLimit })}</GlassChip>
         </div>
       </div>
 

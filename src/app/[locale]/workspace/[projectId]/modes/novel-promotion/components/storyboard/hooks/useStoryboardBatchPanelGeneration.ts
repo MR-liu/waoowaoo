@@ -7,9 +7,21 @@ import type { NovelPromotionStoryboard } from '@/types/project'
 import type { StoryboardPanel } from './useStoryboardState'
 import { getErrorMessage } from './storyboard-panel-asset-utils'
 
+function getConcurrencyLimitForModel(modelKey: string | undefined): number {
+  if (!modelKey) return 10
+  const separatorIndex = modelKey.indexOf('::')
+  const providerId = separatorIndex === -1 ? modelKey : modelKey.slice(0, separatorIndex)
+  // Multi-instance providers use "provider:uuid" format; extract the base key
+  const colonIndex = providerId.indexOf(':')
+  const providerBase = colonIndex === -1 ? providerId : providerId.slice(0, colonIndex)
+  if (providerBase === 'flow2api') return 4
+  return 10
+}
+
 interface UseStoryboardBatchPanelGenerationProps {
   sortedStoryboards: NovelPromotionStoryboard[]
   submittingPanelImageIds: Set<string>
+  storyboardModel?: string
   getTextPanels: (storyboard: NovelPromotionStoryboard) => StoryboardPanel[]
   regeneratePanelImage: (panelId: string, count?: number, force?: boolean) => Promise<void>
   setIsEpisodeBatchSubmitting: (value: boolean) => void
@@ -18,11 +30,13 @@ interface UseStoryboardBatchPanelGenerationProps {
 export function useStoryboardBatchPanelGeneration({
   sortedStoryboards,
   submittingPanelImageIds,
+  storyboardModel,
   getTextPanels,
   regeneratePanelImage,
   setIsEpisodeBatchSubmitting,
 }: UseStoryboardBatchPanelGenerationProps) {
   const t = useTranslations('storyboard')
+  const concurrencyLimit = useMemo(() => getConcurrencyLimitForModel(storyboardModel), [storyboardModel])
   const runningCount = useMemo(() => {
     return sortedStoryboards.reduce((count, storyboard) => {
       const panels = getTextPanels(storyboard)
@@ -65,7 +79,6 @@ export function useStoryboardBatchPanelGeneration({
 
       _ulogInfo(`[批量生成] 开始生成 ${panelsToGenerate.length} 个分镜图片`)
 
-      const concurrencyLimit = 10
       const results: Array<PromiseSettledResult<unknown>> = []
       for (let index = 0; index < panelsToGenerate.length; index += concurrencyLimit) {
         const batch = panelsToGenerate.slice(index, index + concurrencyLimit)
@@ -112,11 +125,12 @@ export function useStoryboardBatchPanelGeneration({
     } finally {
       setIsEpisodeBatchSubmitting(false)
     }
-  }, [getTextPanels, regeneratePanelImage, setIsEpisodeBatchSubmitting, sortedStoryboards, submittingPanelImageIds, t])
+  }, [concurrencyLimit, getTextPanels, regeneratePanelImage, setIsEpisodeBatchSubmitting, sortedStoryboards, submittingPanelImageIds, t])
 
   return {
     runningCount,
     pendingPanelCount,
+    concurrencyLimit,
     handleGenerateAllPanels,
   }
 }
