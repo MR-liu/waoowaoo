@@ -9,6 +9,7 @@ const tryMarkTaskFailedMock = vi.hoisted(() => vi.fn(async () => true))
 const startTaskWatchdogMock = vi.hoisted(() => vi.fn())
 const logInfoMock = vi.hoisted(() => vi.fn())
 const logErrorMock = vi.hoisted(() => vi.fn())
+const logWarnMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -36,6 +37,7 @@ vi.mock('@/lib/task/reconcile', () => ({
 vi.mock('@/lib/logging/core', () => ({
   logInfo: logInfoMock,
   logError: logErrorMock,
+  logWarn: logWarnMock,
 }))
 
 const originalNextRuntime = process.env.NEXT_RUNTIME

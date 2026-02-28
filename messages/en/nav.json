@@ -2,6 +2,7 @@
   "workspace": "Workspace",
   "assetHub": "Asset Hub",
   "profile": "Settings",
+  "adminUsers": "User Admin",
   "signin": "Sign In",
   "logout": "Logout"
 }

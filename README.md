@@ -47,6 +47,12 @@ docker compose up -d
 访问 [http://localhost:13000](http://localhost:13000) 开始使用！
 
 > 首次启动会自动完成数据库初始化，无需任何额外配置。
+>
+> 🔐 **管理员初始化（内部工具必需）**：
+> - 通过环境变量注入管理员账号：`ADMIN_USERNAME`、`ADMIN_PASSWORD`
+> - 可选白名单：`ADMIN_USERNAMES`（逗号分隔）
+> - 可选强制改密：`ADMIN_FORCE_PASSWORD_RESET=true`
+> - 应用启动时会自动创建/更新管理员账户（密码至少 8 位）
 
 > ⚠️ **如果遇到网页卡顿**：HTTP 模式下浏览器可能限制并发连接。可安装 [Caddy](https://caddyserver.com/docs/install) 启用 HTTPS：
 > ```bash
@@ -76,6 +82,12 @@ docker compose up -d
 Visit [http://localhost:13000](http://localhost:13000) to get started!
 
 > The database is initialized automatically on first launch — no extra configuration needed.
+>
+> 🔐 **Admin bootstrap (required for internal mode)**:
+> - Inject admin credentials via env: `ADMIN_USERNAME`, `ADMIN_PASSWORD`
+> - Optional admin whitelist: `ADMIN_USERNAMES` (comma-separated)
+> - Optional forced reset: `ADMIN_FORCE_PASSWORD_RESET=true`
+> - On startup, the app auto-creates/updates the admin account (password length >= 8)
 
 > ⚠️ **If you experience lag**: HTTP mode may limit browser connections. Install [Caddy](https://caddyserver.com/docs/install) for HTTPS:
 > ```bash

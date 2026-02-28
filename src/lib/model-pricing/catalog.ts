@@ -221,6 +221,7 @@ export function listBuiltinPricingCatalog(): BuiltinPricingCatalogEntry[] {
  */
 const PROVIDER_ALIASES: Readonly<Record<string, string>> = {
   'gemini-compatible': 'google',
+  flow2api: 'google',
 }
 
 export function findBuiltinPricingCatalogEntry(

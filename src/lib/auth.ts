@@ -4,6 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcryptjs"
 import { logAuthAction } from './logging/semantic'
 import { prisma } from './prisma'
+import { isAdminUsername } from './admin'
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -52,6 +53,7 @@ export const authOptions: NextAuthOptions = {
         return {
           id: user.id,
           name: user.name,
+          isAdmin: isAdminUsername(user.name),
         }
       }
     })
@@ -66,12 +68,14 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id
+        token.isAdmin = user.isAdmin === true || isAdminUsername(typeof user.name === 'string' ? user.name : '')
       }
       return token
     },
     async session({ session, token }) {
       if (typeof token.id === 'string' && token.id && session.user) {
         session.user.id = token.id as string
+        session.user.isAdmin = token.isAdmin === true
       }
       return session
     }

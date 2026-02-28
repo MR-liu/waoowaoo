@@ -26,13 +26,13 @@ export default function Navbar() {
           <div className="flex items-center gap-2">
             <motion.div whileHover={MOTION_PRESETS.hover} whileTap={MOTION_PRESETS.press} transition={MOTION_PRESETS.spring.snappy}>
               <Link href={session ? "/workspace" : "/"} className="group">
-              <Image
+              {/* <Image
                 src="/logo-small.png?v=1"
                 alt={tc('appName')}
                 width={80}
                 height={80}
                 className="object-contain transition-transform group-hover:scale-110"
-              />
+              /> */}
             </Link>
             </motion.div>
             <span className="glass-chip glass-chip-info px-2.5 py-1 text-[11px]">
@@ -63,6 +63,14 @@ export default function Navbar() {
                   <AppIcon name="userRoundCog" className="w-5 h-5" />
                   {t('profile')}
                 </Link>
+                {session.user?.isAdmin ? (
+                  <Link
+                    href="/admin/users"
+                    className="text-sm text-[var(--glass-text-secondary)] hover:text-[var(--glass-text-primary)] font-medium transition-colors"
+                  >
+                    {t('adminUsers')}
+                  </Link>
+                ) : null}
                 <LanguageSwitcher />
               </>
 

@@ -14,6 +14,8 @@ import { GoogleVeoVideoGenerator } from './video/google'
 import { QwenTTSGenerator } from './audio'
 import { MinimaxVideoGenerator } from './minimax'
 import { ViduVideoGenerator } from './vidu'
+import { Flow2ApiImageGenerator, Flow2ApiVideoGenerator } from './flow2api'
+import { NewApiImageGenerator, NewApiVideoGenerator } from './newapi'
 import { getProviderKey } from '@/lib/api-config'
 
 /**
@@ -47,6 +49,10 @@ export function createImageGenerator(provider: string, modelId?: string): ImageG
             return new ArkSeedreamGenerator()
         case 'gemini-compatible':
             return new GeminiCompatibleImageGenerator(actualModelId, provider)
+        case 'flow2api':
+            return new Flow2ApiImageGenerator(provider)
+        case 'newapi':
+            return new NewApiImageGenerator(provider)
         case 'openai-compatible':
             throw new Error('PROVIDER_TYPE_UNSUPPORTED: openai-compatible only supports llm')
         default:
@@ -72,6 +78,10 @@ export function createVideoGenerator(provider: string): VideoGenerator {
             return new MinimaxVideoGenerator()
         case 'vidu':
             return new ViduVideoGenerator()
+        case 'flow2api':
+            return new Flow2ApiVideoGenerator(provider)
+        case 'newapi':
+            return new NewApiVideoGenerator(provider)
         case 'openai-compatible':
             throw new Error('PROVIDER_TYPE_UNSUPPORTED: openai-compatible only supports llm')
         default:

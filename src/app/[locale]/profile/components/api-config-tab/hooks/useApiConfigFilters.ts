@@ -19,6 +19,8 @@ const MODEL_TYPES: Array<'llm' | 'image' | 'video' | 'lipsync'> = ['llm', 'image
 const MODEL_PROVIDER_KEYS = [
   'ark',
   'google',
+  'flow2api',
+  'newapi',
   'openrouter',
   'minimax',
   'vidu',

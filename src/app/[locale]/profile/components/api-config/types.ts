@@ -93,6 +93,13 @@ export const PRESET_MODELS: PresetModel[] = [
     { modelId: 'imagen-4.0-generate-001', name: 'Imagen 4', type: 'image', provider: 'google' },
     { modelId: 'imagen-4.0-ultra-generate-001', name: 'Imagen 4 Ultra', type: 'image', provider: 'google' },
     { modelId: 'imagen-4.0-fast-generate-001', name: 'Imagen 4 Fast', type: 'image', provider: 'google' },
+    // Flow2API（OpenAI-Compatible 多媒体网关，复用 Google 模型语义）
+    { modelId: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2 (Flow2API)', type: 'image', provider: 'flow2api' },
+    { modelId: 'gemini-3-pro-image-preview', name: 'Banana Pro (Flow2API)', type: 'image', provider: 'flow2api' },
+    { modelId: 'gemini-2.5-flash-image', name: 'Gemini 2.5 Flash Image (Flow2API)', type: 'image', provider: 'flow2api' },
+    { modelId: 'imagen-4.0-generate-001', name: 'Imagen 4 (Flow2API)', type: 'image', provider: 'flow2api' },
+    { modelId: 'imagen-4.0-ultra-generate-001', name: 'Imagen 4 Ultra (Flow2API)', type: 'image', provider: 'flow2api' },
+    { modelId: 'imagen-4.0-fast-generate-001', name: 'Imagen 4 Fast (Flow2API)', type: 'image', provider: 'flow2api' },
     // 视频模型
     { modelId: 'doubao-seedance-1-0-pro-fast-251015', name: 'Seedance 1.0 Pro Fast', type: 'video', provider: 'ark' },
     { modelId: 'doubao-seedance-1-0-lite-i2v-250428', name: 'Seedance 1.0 Lite', type: 'video', provider: 'ark' },
@@ -105,6 +112,11 @@ export const PRESET_MODELS: PresetModel[] = [
     { modelId: 'veo-3.0-generate-001', name: 'Veo 3.0', type: 'video', provider: 'google' },
     { modelId: 'veo-3.0-fast-generate-001', name: 'Veo 3.0 Fast', type: 'video', provider: 'google' },
     { modelId: 'veo-2.0-generate-001', name: 'Veo 2.0', type: 'video', provider: 'google' },
+    { modelId: 'veo-3.1-generate-preview', name: 'Veo 3.1 (Flow2API)', type: 'video', provider: 'flow2api' },
+    { modelId: 'veo-3.1-fast-generate-preview', name: 'Veo 3.1 Fast (Flow2API)', type: 'video', provider: 'flow2api' },
+    { modelId: 'veo-3.0-generate-001', name: 'Veo 3.0 (Flow2API)', type: 'video', provider: 'flow2api' },
+    { modelId: 'veo-3.0-fast-generate-001', name: 'Veo 3.0 Fast (Flow2API)', type: 'video', provider: 'flow2api' },
+    { modelId: 'veo-2.0-generate-001', name: 'Veo 2.0 (Flow2API)', type: 'video', provider: 'flow2api' },
     { modelId: 'fal-wan25', name: 'Wan 2.6', type: 'video', provider: 'fal' },
     { modelId: 'fal-veo31', name: 'Veo 3.1', type: 'video', provider: 'fal' },
     { modelId: 'fal-sora2', name: 'Sora 2', type: 'video', provider: 'fal' },
@@ -151,6 +163,8 @@ export function isPresetComingSoonModelKey(modelKey: string): boolean {
 export const PRESET_PROVIDERS: Omit<Provider, 'apiKey' | 'hasApiKey'>[] = [
     { id: 'ark', name: 'Volcengine Ark' },
     { id: 'google', name: 'Google AI Studio' },
+    { id: 'flow2api', name: 'Flow2API', baseUrl: 'http://localhost:8000' },
+    { id: 'newapi', name: 'NEW API', baseUrl: 'http://localhost:3000' },
     { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
     { id: 'minimax', name: 'MiniMax Hailuo' },
     { id: 'vidu', name: 'Vidu' },
@@ -160,6 +174,8 @@ export const PRESET_PROVIDERS: Omit<Provider, 'apiKey' | 'hasApiKey'>[] = [
 
 const ZH_PROVIDER_NAME_MAP: Record<string, string> = {
     ark: '火山引擎 Ark',
+    flow2api: 'Flow2API',
+    newapi: 'NEW API',
     minimax: '海螺 MiniMax',
     vidu: '生数科技 Vidu',
 }
@@ -284,6 +300,24 @@ export const PROVIDER_TUTORIALS: ProviderTutorial[] = [
             {
                 text: 'google_step1',
                 url: 'https://aistudio.google.com/api-keys'
+            }
+        ]
+    },
+    {
+        providerId: 'flow2api',
+        steps: [
+            {
+                text: 'flow2api_step1',
+                url: 'https://github.com/TheSmallHanCat/flow2api'
+            }
+        ]
+    },
+    {
+        providerId: 'newapi',
+        steps: [
+            {
+                text: 'newapi_step1',
+                url: 'https://github.com/Calcium-Ion/new-api'
             }
         ]
     },

@@ -137,6 +137,7 @@ const DEFAULT_LIPSYNC_MODEL_KEY = composeModelKey('fal', 'fal-ai/kling-video/lip
  */
 const PRICING_PROVIDER_ALIASES: Readonly<Record<string, string>> = {
   'gemini-compatible': 'google',
+  flow2api: 'google',
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

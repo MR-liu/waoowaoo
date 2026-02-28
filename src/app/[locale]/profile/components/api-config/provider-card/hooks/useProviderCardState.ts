@@ -41,7 +41,7 @@ const EMPTY_MODEL_FORM: ModelFormState = {
  * Provider keys that require user-defined pricing when adding custom models
  * (they are not in the built-in pricing catalog).
  */
-const CUSTOM_PRICING_PROVIDER_KEYS = new Set(['openrouter', 'openai-compatible'])
+const CUSTOM_PRICING_PROVIDER_KEYS = new Set(['openrouter', 'openai-compatible', 'newapi'])
 
 function toProviderCardModelType(type: CustomModel['type']): ProviderCardModelType | null {
   if (type === 'llm' || type === 'image' || type === 'video' || type === 'audio') return type
@@ -120,7 +120,7 @@ export function useProviderCardState({
     (presetProvider) => presetProvider.id === provider.id,
   )
   const showBaseUrlEdit =
-    ['gemini-compatible', 'openai-compatible'].includes(providerKey) &&
+    ['gemini-compatible', 'openai-compatible', 'flow2api', 'newapi'].includes(providerKey) &&
     Boolean(onUpdateBaseUrl)
   const tutorial = getProviderTutorial(provider.id)
 

@@ -139,7 +139,7 @@ export function CapsuleNav({ items, activeId, onItemClick, projectId, episodeId 
 
     return (
         <motion.nav
-            className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-fadeInDown"
+            className="sticky top-20 z-50 mx-auto w-fit animate-fadeInDown"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={MOTION_PRESETS.spring.gentle}

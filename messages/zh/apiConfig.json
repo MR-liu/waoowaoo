@@ -97,6 +97,8 @@
       "openrouter_step1": "进入 OpenRouter 平台，创建 API Key（必须选择带有图像功能的模型）",
       "fal_step1": "进入 FAL 平台，创建 API Key",
       "google_step1": "进入 Google AI Studio，创建 API Key",
+      "flow2api_step1": "进入 Flow2API 项目文档，按部署说明创建并启动服务，配置 Base URL 与 API Key",
+      "newapi_step1": "进入 NEW API 项目文档，按部署说明创建并启动服务，配置 Base URL 与 API Key",
       "minimax_step1": "进入海螺 MiniMax 平台，获取 API Key",
       "vidu_step1": "进入生数科技 Vidu 平台，点击「新建 API Key」",
       "openai_compatible_step1": "填写任意 OpenAI 协议兼容服务的 Base URL 与 API Key",

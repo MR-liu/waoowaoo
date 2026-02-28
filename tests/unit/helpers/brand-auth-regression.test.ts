@@ -16,6 +16,8 @@ describe('brand/auth regression', () => {
 
     expect(navbar.includes('/auth/signup')).toBe(false)
     expect(navbar.includes("t('signup')")).toBe(false)
+    expect(navbar.includes('/admin/users')).toBe(true)
+    expect(navbar.includes("t('adminUsers')")).toBe(true)
     expect(landing.includes('/auth/signup')).toBe(false)
     expect(signin.includes('/auth/signup')).toBe(false)
   })
