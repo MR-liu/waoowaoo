@@ -106,13 +106,20 @@ describe('worker story-to-script behavior', () => {
       locations: [{ id: 'loc-1', name: 'Old Town', summary: 'town' }],
     })
 
-    prismaMock.novelPromotionEpisode.findUnique
-      .mockResolvedValueOnce({
-        id: 'episode-1',
-        novelPromotionProjectId: 'np-project-1',
-        novelText: 'episode text',
-      })
-      .mockResolvedValueOnce({ id: 'episode-1' })
+    prismaMock.novelPromotionEpisode.findUnique.mockImplementation(async (args: unknown) => {
+      const select = (args && typeof args === 'object' && 'select' in args)
+        ? (args as { select?: Record<string, unknown> }).select
+        : undefined
+      const isInitialEpisodeLookup = Boolean(select?.novelPromotionProjectId)
+      if (isInitialEpisodeLookup) {
+        return {
+          id: 'episode-1',
+          novelPromotionProjectId: 'np-project-1',
+          novelText: 'episode text',
+        }
+      }
+      return { id: 'episode-1' }
+    })
 
     orchestratorMock.runStoryToScriptOrchestrator.mockResolvedValue({
       analyzedCharacters: [{ name: 'New Hero' }],
@@ -141,6 +148,29 @@ describe('worker story-to-script behavior', () => {
   it('payload.episodeId mismatch job episode -> explicit error', async () => {
     const job = buildJob({ episodeId: 'episode-2', content: 'input content' })
     await expect(handleStoryToScriptTask(job)).rejects.toThrow('TASK_PAYLOAD_EPISODE_ID_MISMATCH')
+  })
+
+  it('payload.model 与 payload.analysisModel 冲突时显式失败', async () => {
+    const job = buildJob({
+      episodeId: 'episode-1',
+      content: 'input content',
+      model: 'llm::a',
+      analysisModel: 'llm::b',
+    })
+    await expect(handleStoryToScriptTask(job)).rejects.toThrow('TASK_PAYLOAD_MODEL_MISMATCH')
+  })
+
+  it('payload.analysisModel 存在时优先使用冻结模型', async () => {
+    const job = buildJob({
+      episodeId: 'episode-1',
+      content: 'input content',
+      analysisModel: 'llm::frozen-model',
+    })
+    await handleStoryToScriptTask(job)
+
+    expect(configMock.resolveProjectModelCapabilityGenerationOptions).toHaveBeenCalledWith(expect.objectContaining({
+      modelKey: 'llm::frozen-model',
+    }))
   })
 
   it('success path -> persists clips and screenplay with concrete fields', async () => {

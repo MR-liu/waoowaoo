@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: waoowaoo-worker-text
+  namespace: waoowaoo-prod
+  labels:
+    app.kubernetes.io/name: waoowaoo
+    app.kubernetes.io/component: worker-text
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: waoowaoo
+      app.kubernetes.io/component: worker-text
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: waoowaoo
+        app.kubernetes.io/component: worker-text
+    spec:
+      containers:
+        - name: worker-text
+          image: waoowaoo:latest
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "npm run start:worker"]
+          env:
+            - name: WORKER_QUEUES
+              value: "text"
+          envFrom:
+            - configMapRef:
+                name: waoowaoo-app-config
+            - secretRef:
+                name: waoowaoo-app-secret
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "3Gi"
+      terminationGracePeriodSeconds: 30

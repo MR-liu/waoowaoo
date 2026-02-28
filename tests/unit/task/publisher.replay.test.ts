@@ -7,6 +7,7 @@ const taskFindUniqueMock = vi.hoisted(() => vi.fn(async () => null))
 const redisPublishMock = vi.hoisted(() => vi.fn(async () => 1))
 const taskMetricsMock = vi.hoisted(() => ({
   recordTaskTerminalStateMismatch: vi.fn(),
+  recordTaskEventPublish: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({
@@ -29,7 +30,7 @@ vi.mock('@/lib/redis', () => ({
 }))
 vi.mock('@/lib/task/metrics', () => taskMetricsMock)
 
-import { listEventsAfter, listTaskLifecycleEvents, publishTaskStreamEvent } from '@/lib/task/publisher'
+import { listEventsAfter, listTaskLifecycleEvents, publishTaskEvent, publishTaskStreamEvent } from '@/lib/task/publisher'
 import { TASK_EVENT_TYPE } from '@/lib/task/types'
 
 describe('task publisher replay', () => {
@@ -40,6 +41,7 @@ describe('task publisher replay', () => {
     taskFindUniqueMock.mockReset()
     redisPublishMock.mockReset()
     taskMetricsMock.recordTaskTerminalStateMismatch.mockReset()
+    taskMetricsMock.recordTaskEventPublish.mockReset()
   })
 
   it('replays persisted lifecycle + stream rows in chronological order', async () => {
@@ -159,6 +161,103 @@ describe('task publisher replay', () => {
     expect(typeof message?.payload?.flowId).toBe('string')
     expect(typeof message?.payload?.flowStageIndex).toBe('number')
     expect(typeof message?.payload?.flowStageTotal).toBe('number')
+    expect(taskMetricsMock.recordTaskEventPublish).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'task-1',
+      projectId: 'project-1',
+      userId: 'user-1',
+      eventType: 'task.stream',
+      streamType: 'stream',
+      persist: true,
+      result: 'published',
+    }))
+  })
+
+  it('normalizes lifecycle payload with fallback step fields for run-stream mapping', async () => {
+    taskEventCreateMock.mockResolvedValueOnce({
+      id: 110,
+      taskId: 'task-2',
+      projectId: 'project-1',
+      userId: 'user-1',
+      eventType: 'task.processing',
+      payload: {
+        stage: 'received',
+        message: 'running',
+      },
+      createdAt: new Date('2026-02-27T00:00:03.000Z'),
+    })
+    redisPublishMock.mockResolvedValueOnce(1)
+
+    const message = await publishTaskEvent({
+      taskId: 'task-2',
+      projectId: 'project-1',
+      userId: 'user-1',
+      type: TASK_EVENT_TYPE.PROCESSING,
+      taskType: 'story_to_script_run',
+      targetType: 'episode',
+      targetId: 'episode-2',
+      episodeId: 'episode-2',
+      payload: {
+        stage: 'received',
+        message: 'running',
+      },
+    })
+
+    expect(message?.payload?.lifecycleType).toBe(TASK_EVENT_TYPE.PROCESSING)
+    expect(typeof message?.payload?.flowId).toBe('string')
+    expect(typeof message?.payload?.flowStageIndex).toBe('number')
+    expect(typeof message?.payload?.flowStageTotal).toBe('number')
+    expect(typeof message?.payload?.stepId).toBe('string')
+    expect(typeof message?.payload?.stepIndex).toBe('number')
+    expect(typeof message?.payload?.stepTotal).toBe('number')
+    expect(typeof message?.payload?.stepTitle).toBe('string')
+    expect(taskMetricsMock.recordTaskEventPublish).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'task-2',
+      projectId: 'project-1',
+      userId: 'user-1',
+      eventType: TASK_EVENT_TYPE.PROCESSING,
+      streamType: 'lifecycle',
+      persist: true,
+      result: 'published',
+    }))
+  })
+
+  it('records failed publish metric when lifecycle redis publish throws', async () => {
+    taskEventCreateMock.mockResolvedValueOnce({
+      id: 111,
+      taskId: 'task-3',
+      projectId: 'project-1',
+      userId: 'user-1',
+      eventType: 'task.processing',
+      payload: {
+        stage: 'received',
+      },
+      createdAt: new Date('2026-02-27T00:00:03.000Z'),
+    })
+    redisPublishMock.mockRejectedValueOnce(new Error('redis offline'))
+
+    await expect(publishTaskEvent({
+      taskId: 'task-3',
+      projectId: 'project-1',
+      userId: 'user-1',
+      type: TASK_EVENT_TYPE.PROCESSING,
+      taskType: 'story_to_script_run',
+      payload: {
+        trace: {
+          requestId: 'req-1',
+        },
+      },
+    })).rejects.toThrow('redis offline')
+
+    expect(taskMetricsMock.recordTaskEventPublish).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: 'req-1',
+      taskId: 'task-3',
+      projectId: 'project-1',
+      userId: 'user-1',
+      eventType: TASK_EVENT_TYPE.PROCESSING,
+      streamType: 'lifecycle',
+      persist: true,
+      result: 'failed',
+    }))
   })
 
   it('replays lifecycle + stream rows in listEventsAfter', async () => {

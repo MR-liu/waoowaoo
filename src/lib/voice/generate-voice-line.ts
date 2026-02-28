@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { getAudioApiKey, getProviderKey, resolveModelSelectionOrSingle } from '@/lib/api-config'
 import { extractCOSKey, getSignedUrl, imageUrlToBase64, toFetchableUrl, uploadToCOS } from '@/lib/cos'
 import { resolveStorageKeyFromMediaValue } from '@/lib/media/service'
+import { decodeSpeakerVoicesFromDb, SpeakerVoicesContractError } from '@/lib/contracts/speaker-voices-contract'
 
 type CheckCancelled = () => Promise<void>
 
@@ -157,13 +158,14 @@ export async function generateVoiceLine(params: {
     throw new Error('Novel promotion project not found')
   }
 
-  let speakerVoices: Record<string, { audioUrl?: string | null }> = {}
-  if (episode?.speakerVoices) {
-    try {
-      speakerVoices = JSON.parse(episode.speakerVoices)
-    } catch {
-      speakerVoices = {}
+  let speakerVoices: Record<string, { audioUrl: string }> = {}
+  try {
+    speakerVoices = decodeSpeakerVoicesFromDb(episode?.speakerVoices, 'episode.speakerVoices')
+  } catch (error) {
+    if (error instanceof SpeakerVoicesContractError) {
+      throw new Error(`VOICE_LINE_SPEAKER_VOICES_INVALID: ${error.message}`)
     }
+    throw error
   }
 
   const character = matchCharacterBySpeaker(line.speaker, projectData.characters || [])

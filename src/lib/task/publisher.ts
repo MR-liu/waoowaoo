@@ -13,6 +13,8 @@ import {
 import { coerceTaskIntent, resolveTaskIntent } from './intent'
 import { getTaskFlowMeta } from '@/lib/llm-observe/stage-pipeline'
 import { recordTaskTerminalStateMismatch } from './metrics'
+import { recordTaskEventPublish } from './metrics'
+import { markObservedSpanError, markObservedSpanSuccess, startObservedSpan } from '@/lib/observability/otel'
 
 const CHANNEL_PREFIX = 'task-events:project:'
 const STREAM_EPHEMERAL_ENABLED = process.env.LLM_STREAM_EPHEMERAL_ENABLED !== 'false'
@@ -109,10 +111,24 @@ function readPositiveInt(value: unknown): number | null {
   return null
 }
 
+type NormalizedFlowFields = {
+  flowId: string
+  flowStageIndex: number
+  flowStageTotal: number
+  flowStageTitle: string
+}
+
+type NormalizedStepFields = {
+  stepId: string
+  stepIndex: number
+  stepTotal: number
+  stepTitle: string
+}
+
 function normalizeFlowFields(
   taskType: string | null | undefined,
   payload: Record<string, unknown>,
-): Pick<Record<string, unknown>, 'flowId' | 'flowStageIndex' | 'flowStageTotal' | 'flowStageTitle'> {
+): NormalizedFlowFields {
   const flowMeta = getTaskFlowMeta(taskType)
   const flowId = readString(payload.flowId) || flowMeta.flowId
   const flowStageIndex = readPositiveInt(payload.flowStageIndex) || flowMeta.flowStageIndex
@@ -126,6 +142,25 @@ function normalizeFlowFields(
     flowStageIndex,
     flowStageTotal,
     flowStageTitle,
+  }
+}
+
+function normalizeStepFields(
+  payload: Record<string, unknown>,
+  flowFields: NormalizedFlowFields,
+): NormalizedStepFields {
+  const stepId = readString(payload.stepId) || `${flowFields.flowId}:${String(flowFields.flowStageIndex)}`
+  const stepIndex = readPositiveInt(payload.stepIndex) || flowFields.flowStageIndex
+  const stepTotal = Math.max(
+    stepIndex,
+    readPositiveInt(payload.stepTotal) || flowFields.flowStageTotal,
+  )
+  const stepTitle = readString(payload.stepTitle) || flowFields.flowStageTitle
+  return {
+    stepId,
+    stepIndex,
+    stepTotal,
+    stepTitle,
   }
 }
 
@@ -146,7 +181,13 @@ function toObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function normalizeLifecyclePayload(
+function readRequestIdFromPayload(payload?: Record<string, unknown> | null): string | null {
+  const trace = toObject(payload?.trace)
+  const requestId = readString(trace.requestId)
+  return requestId || null
+}
+
+export function normalizeTaskLifecyclePayload(
   type: TaskEventType,
   taskType: string | null | undefined,
   payload?: Record<string, unknown> | null,
@@ -164,6 +205,15 @@ function normalizeLifecyclePayload(
   next.flowStageTotal = flowFields.flowStageTotal
   if (typeof next.flowStageTitle !== 'string' || !next.flowStageTitle.trim()) {
     next.flowStageTitle = flowFields.flowStageTitle
+  }
+  if (lifecycleType !== TASK_EVENT_TYPE.CREATED) {
+    const stepFields = normalizeStepFields(next, flowFields)
+    next.stepId = stepFields.stepId
+    next.stepIndex = stepFields.stepIndex
+    next.stepTotal = stepFields.stepTotal
+    if (typeof next.stepTitle !== 'string' || !next.stepTitle.trim()) {
+      next.stepTitle = stepFields.stepTitle
+    }
   }
 
   return next
@@ -193,11 +243,11 @@ function buildLifecycleEvent(params: {
     targetType: params.targetType || null,
     targetId: params.targetId || null,
     episodeId: params.episodeId || null,
-    payload: normalizeLifecyclePayload(params.lifecycleType, params.taskType, params.payload || null),
+    payload: normalizeTaskLifecyclePayload(params.lifecycleType, params.taskType, params.payload || null),
   }
 }
 
-function normalizeStreamPayload(
+function normalizeTaskStreamPayload(
   taskType: string | null | undefined,
   payload?: Record<string, unknown> | null,
 ): Record<string, unknown> {
@@ -205,6 +255,7 @@ function normalizeStreamPayload(
     ...(payload || {}),
   }
   const flowFields = normalizeFlowFields(taskType, next)
+  const stepFields = normalizeStepFields(next, flowFields)
   return {
     ...next,
     lifecycleType:
@@ -215,6 +266,12 @@ function normalizeStreamPayload(
     flowId: flowFields.flowId,
     flowStageIndex: flowFields.flowStageIndex,
     flowStageTotal: flowFields.flowStageTotal,
+    stepId: stepFields.stepId,
+    stepIndex: stepFields.stepIndex,
+    stepTotal: stepFields.stepTotal,
+    ...(typeof next.stepTitle === 'string' && next.stepTitle.trim()
+      ? {}
+      : { stepTitle: stepFields.stepTitle }),
     ...(typeof next.flowStageTitle === 'string' && next.flowStageTitle.trim()
       ? {}
       : { flowStageTitle: flowFields.flowStageTitle }),
@@ -244,7 +301,7 @@ function buildStreamEvent(params: {
     targetType: params.targetType || null,
     targetId: params.targetId || null,
     episodeId: params.episodeId || null,
-    payload: normalizeStreamPayload(params.taskType, params.payload || null),
+    payload: normalizeTaskStreamPayload(params.taskType, params.payload || null),
   }
 }
 
@@ -553,36 +610,102 @@ export async function publishTaskLifecycleEvent(params: {
 }) {
   const persist = params.persist !== false
   const normalizedType = normalizeLifecycleType(params.lifecycleType)
-  const event = persist
-    ? await taskEventModel.create({
-        data: {
-          taskId: params.taskId,
-          projectId: params.projectId,
-          userId: params.userId,
-          eventType: normalizedType,
-          payload: normalizeLifecyclePayload(params.lifecycleType, params.taskType, params.payload || null),
-        },
-      })
-    : null
-  const ts = (event?.createdAt || new Date()).toISOString()
-  const id = event?.id ? String(event.id) : createEphemeralId()
-
-  const message = buildLifecycleEvent({
-    id,
-    ts,
-    lifecycleType: params.lifecycleType,
-    taskId: params.taskId,
-    projectId: params.projectId,
-    userId: params.userId,
-    taskType: params.taskType || null,
-    targetType: params.targetType || null,
-    targetId: params.targetId || null,
-    episodeId: params.episodeId || null,
-    payload: params.payload || null,
+  const requestId = readRequestIdFromPayload(params.payload || null)
+  const publishSpan = startObservedSpan({
+    name: 'task.publish.lifecycle',
+    context: {
+      requestId,
+      taskId: params.taskId,
+      projectId: params.projectId,
+      userId: params.userId,
+    },
+    attributes: {
+      'waoowaoo.event_type': normalizedType,
+      'waoowaoo.persist': persist,
+    },
   })
 
-  await redis.publish(getProjectChannel(params.projectId), JSON.stringify(message))
-  return message
+  try {
+    const event = persist
+      ? await taskEventModel.create({
+          data: {
+            taskId: params.taskId,
+            projectId: params.projectId,
+            userId: params.userId,
+            eventType: normalizedType,
+            payload: normalizeTaskLifecyclePayload(params.lifecycleType, params.taskType, params.payload || null),
+          },
+        })
+      : null
+    const ts = (event?.createdAt || new Date()).toISOString()
+    const id = event?.id ? String(event.id) : createEphemeralId()
+
+    const message = buildLifecycleEvent({
+      id,
+      ts,
+      lifecycleType: params.lifecycleType,
+      taskId: params.taskId,
+      projectId: params.projectId,
+      userId: params.userId,
+      taskType: params.taskType || null,
+      targetType: params.targetType || null,
+      targetId: params.targetId || null,
+      episodeId: params.episodeId || null,
+      payload: params.payload || null,
+    })
+
+    await redis.publish(getProjectChannel(params.projectId), JSON.stringify(message))
+    recordTaskEventPublish({
+      requestId,
+      taskId: params.taskId,
+      projectId: params.projectId,
+      userId: params.userId,
+      eventType: normalizedType,
+      streamType: 'lifecycle',
+      persist,
+      result: 'published',
+    })
+    markObservedSpanSuccess(publishSpan)
+    return message
+  } catch (error) {
+    recordTaskEventPublish({
+      requestId,
+      taskId: params.taskId,
+      projectId: params.projectId,
+      userId: params.userId,
+      eventType: normalizedType,
+      streamType: 'lifecycle',
+      persist,
+      result: 'failed',
+    })
+    publisherLogger.error({
+      action: 'task.publish.lifecycle.failed',
+      message: 'failed to publish task lifecycle event',
+      requestId: requestId || undefined,
+      taskId: params.taskId,
+      projectId: params.projectId,
+      userId: params.userId,
+      errorCode: 'TASK_EVENT_PUBLISH_FAILED',
+      retryable: true,
+      details: {
+        eventType: normalizedType,
+        persist,
+      },
+      error: error instanceof Error
+        ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        }
+        : {
+          message: String(error),
+        },
+    })
+    markObservedSpanError(publishSpan, error)
+    throw error
+  } finally {
+    publishSpan.end()
+  }
 }
 
 export async function publishTaskEvent(params: {
@@ -625,36 +748,102 @@ export async function publishTaskStreamEvent(params: {
   if (!STREAM_EPHEMERAL_ENABLED) return null
 
   const persist = params.persist === true
-  const normalizedPayload = normalizeStreamPayload(params.taskType, params.payload || null)
-  const event = persist
-    ? await taskEventModel.create({
-        data: {
-          taskId: params.taskId,
-          projectId: params.projectId,
-          userId: params.userId,
-          eventType: TASK_SSE_EVENT_TYPE.STREAM,
-          payload: normalizedPayload,
-        },
-      })
-    : null
-  const ts = (event?.createdAt || new Date()).toISOString()
-  const id = event?.id ? String(event.id) : createEphemeralId()
-
-  const message = buildStreamEvent({
-    id,
-    ts,
-    taskId: params.taskId,
-    projectId: params.projectId,
-    userId: params.userId,
-    taskType: params.taskType || null,
-    targetType: params.targetType || null,
-    targetId: params.targetId || null,
-    episodeId: params.episodeId || null,
-    payload: normalizedPayload,
+  const normalizedPayload = normalizeTaskStreamPayload(params.taskType, params.payload || null)
+  const requestId = readRequestIdFromPayload(normalizedPayload)
+  const publishSpan = startObservedSpan({
+    name: 'task.publish.stream',
+    context: {
+      requestId,
+      taskId: params.taskId,
+      projectId: params.projectId,
+      userId: params.userId,
+    },
+    attributes: {
+      'waoowaoo.event_type': TASK_SSE_EVENT_TYPE.STREAM,
+      'waoowaoo.persist': persist,
+    },
   })
 
-  await redis.publish(getProjectChannel(params.projectId), JSON.stringify(message))
-  return message
+  try {
+    const event = persist
+      ? await taskEventModel.create({
+          data: {
+            taskId: params.taskId,
+            projectId: params.projectId,
+            userId: params.userId,
+            eventType: TASK_SSE_EVENT_TYPE.STREAM,
+            payload: normalizedPayload,
+          },
+        })
+      : null
+    const ts = (event?.createdAt || new Date()).toISOString()
+    const id = event?.id ? String(event.id) : createEphemeralId()
+
+    const message = buildStreamEvent({
+      id,
+      ts,
+      taskId: params.taskId,
+      projectId: params.projectId,
+      userId: params.userId,
+      taskType: params.taskType || null,
+      targetType: params.targetType || null,
+      targetId: params.targetId || null,
+      episodeId: params.episodeId || null,
+      payload: normalizedPayload,
+    })
+
+    await redis.publish(getProjectChannel(params.projectId), JSON.stringify(message))
+    recordTaskEventPublish({
+      requestId,
+      taskId: params.taskId,
+      projectId: params.projectId,
+      userId: params.userId,
+      eventType: TASK_SSE_EVENT_TYPE.STREAM,
+      streamType: 'stream',
+      persist,
+      result: 'published',
+    })
+    markObservedSpanSuccess(publishSpan)
+    return message
+  } catch (error) {
+    recordTaskEventPublish({
+      requestId,
+      taskId: params.taskId,
+      projectId: params.projectId,
+      userId: params.userId,
+      eventType: TASK_SSE_EVENT_TYPE.STREAM,
+      streamType: 'stream',
+      persist,
+      result: 'failed',
+    })
+    publisherLogger.error({
+      action: 'task.publish.stream.failed',
+      message: 'failed to publish task stream event',
+      requestId: requestId || undefined,
+      taskId: params.taskId,
+      projectId: params.projectId,
+      userId: params.userId,
+      errorCode: 'TASK_EVENT_PUBLISH_FAILED',
+      retryable: true,
+      details: {
+        eventType: TASK_SSE_EVENT_TYPE.STREAM,
+        persist,
+      },
+      error: error instanceof Error
+        ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        }
+        : {
+          message: String(error),
+        },
+    })
+    markObservedSpanError(publishSpan, error)
+    throw error
+  } finally {
+    publishSpan.end()
+  }
 }
 
 export async function listEventsAfter(

@@ -1,12 +1,17 @@
 import { createScopedLogger } from '@/lib/logging/core'
 import { NextRequest, NextResponse } from 'next/server'
 import { apiHandler, ApiError, getRequestId } from '@/lib/api-errors'
-import { getProjectChannel, listEventsAfter } from '@/lib/task/publisher'
+import { getProjectChannel, listEventsAfter, normalizeTaskLifecyclePayload } from '@/lib/task/publisher'
 import { isErrorResponse, requireProjectAuthLight, requireUserAuth } from '@/lib/api-auth'
 import { TASK_EVENT_TYPE, TASK_SSE_EVENT_TYPE, type SSEEvent } from '@/lib/task/types'
 import { getSharedSubscriber } from '@/lib/sse/shared-subscriber'
 import { prisma } from '@/lib/prisma'
-import { coerceTaskIntent } from '@/lib/task/intent'
+import {
+  recordTaskSSEConnection,
+  recordTaskSSEConnectionDuration,
+  recordTaskSSEPayloadParseFailed,
+  recordTaskSSEReplayEvents,
+} from '@/lib/task/metrics'
 
 function parseReplayCursorId(value: string | null): number {
   if (!value) return 0
@@ -183,15 +188,17 @@ async function listActiveLifecycleSnapshot(params: {
 
   return rows.map((row): SSEEvent => {
     const payload = asObject(row.payload)
-    const payloadUi = asObject(payload?.ui)
     const lifecycleType = row.status === 'queued'
       ? TASK_EVENT_TYPE.CREATED
       : TASK_EVENT_TYPE.PROCESSING
-    const eventPayload: Record<string, unknown> = {
-      ...(payload || {}),
+    const eventPayload = normalizeTaskLifecyclePayload(
       lifecycleType,
-      intent: coerceTaskIntent(payloadUi?.intent ?? payload?.intent, row.type),
-      progress: typeof row.progress === 'number' ? row.progress : null}
+      row.type,
+      {
+        ...(payload || {}),
+        progress: typeof row.progress === 'number' ? row.progress : null,
+      },
+    )
 
     return {
       id: `snapshot:${row.id}:${row.updatedAt.getTime()}`,
@@ -234,6 +241,7 @@ export const GET = apiHandler(async (request: NextRequest) => {
       let closed = false
       let timer: ReturnType<typeof setInterval> | null = null
       let unsubscribe: (() => Promise<void>) | null = null
+      const connectedAt = Date.now()
       const logger = createScopedLogger({
         module: 'sse',
         action: 'sse.stream',
@@ -245,6 +253,14 @@ export const GET = apiHandler(async (request: NextRequest) => {
         message: 'sse connection established',
         details: {
           lastEventId: lastEventId || 0}})
+      recordTaskSSEConnection({
+        requestId: requestId || null,
+        projectId,
+        userId: session.user.id,
+        event: 'connect',
+        episodeId,
+        lastEventId,
+      })
 
       const safeEnqueue = (chunk: string) => {
         if (closed) return
@@ -317,6 +333,21 @@ export const GET = apiHandler(async (request: NextRequest) => {
         logger.info({
           action: 'sse.disconnect',
           message: 'sse connection closed'})
+        recordTaskSSEConnection({
+          requestId: requestId || null,
+          projectId,
+          userId: session.user.id,
+          event: 'disconnect',
+          episodeId,
+          lastEventId,
+        })
+        recordTaskSSEConnectionDuration({
+          requestId: requestId || null,
+          projectId,
+          userId: session.user.id,
+          durationMs: Date.now() - connectedAt,
+          episodeId,
+        })
         if (timer) {
           clearInterval(timer)
           timer = null
@@ -359,6 +390,11 @@ export const GET = apiHandler(async (request: NextRequest) => {
           }
           deliverEvent(event)
         } catch (error) {
+          recordTaskSSEPayloadParseFailed({
+            requestId: requestId || null,
+            projectId,
+            userId: session.user.id,
+          })
           logger.warn({
             action: 'sse.message.parse_failed',
             message: 'failed to parse sse payload from redis pubsub',
@@ -391,6 +427,13 @@ export const GET = apiHandler(async (request: NextRequest) => {
             fromEventId: lastEventId,
             scanned: missed.length,
             delivered: replayEvents.length}})
+        recordTaskSSEReplayEvents({
+          requestId: requestId || null,
+          projectId,
+          userId: session.user.id,
+          source: 'replay',
+          delivered: replayEvents.length,
+        })
         for (const event of replayEvents) {
           deliverEvent(event)
         }
@@ -405,6 +448,13 @@ export const GET = apiHandler(async (request: NextRequest) => {
           message: 'sse active snapshot sent',
           details: {
             count: snapshotEvents.length}})
+        recordTaskSSEReplayEvents({
+          requestId: requestId || null,
+          projectId,
+          userId: session.user.id,
+          source: 'snapshot',
+          delivered: snapshotEvents.length,
+        })
         for (const event of snapshotEvents) {
           deliverEvent(event)
         }

@@ -1,13 +1,12 @@
 import 'dotenv/config'
 import { logInfo as _ulogInfo, logError as _ulogError } from '@/lib/logging/core'
-import { createImageWorker } from './image.worker'
-import { createVideoWorker } from './video.worker'
-import { createVoiceWorker } from './voice.worker'
-import { createTextWorker } from './text.worker'
+import { createWorkersByLanes, parseWorkerLanes } from './selection'
 
-const workers = [createImageWorker(), createVideoWorker(), createVoiceWorker(), createTextWorker()]
+const selectedLanes = parseWorkerLanes(process.env.WORKER_QUEUES)
+const workers = createWorkersByLanes(selectedLanes)
 
 _ulogInfo('[Workers] started:', workers.length)
+_ulogInfo('[Workers] lanes:', selectedLanes.join(','))
 
 for (const worker of workers) {
   worker.on('ready', () => {

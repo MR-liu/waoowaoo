@@ -334,11 +334,19 @@ async function runStoryboardPhasesForClip(params: {
 
 async function handleRegenerateStoryboardTextTask(job: Job<TaskJobData>) {
   const payload = (job.data.payload || {}) as AnyObj
+  if (job.data.targetType !== 'NovelPromotionStoryboard' || !job.data.targetId) {
+    throw new Error('REGENERATE_STORYBOARD_TEXT_TASK_TARGET_INVALID: targetType must be NovelPromotionStoryboard')
+  }
   const projectId = job.data.projectId
-  const storyboardId = typeof payload.storyboardId === 'string' ? payload.storyboardId : job.data.targetId
+  const storyboardId = typeof payload.storyboardId === 'string' ? payload.storyboardId.trim() : ''
   const userId = job.data.userId
 
-  if (!storyboardId) throw new Error('regenerate_storyboard_text requires storyboardId')
+  if (!storyboardId) {
+    throw new Error('REGENERATE_STORYBOARD_TEXT_PAYLOAD_STORYBOARD_ID_REQUIRED: payload.storyboardId is required')
+  }
+  if (storyboardId !== job.data.targetId) {
+    throw new Error('REGENERATE_STORYBOARD_TEXT_PAYLOAD_STORYBOARD_ID_MISMATCH: payload.storyboardId must equal task.targetId')
+  }
 
   const storyboard = await prisma.novelPromotionStoryboard.findUnique({
     where: { id: storyboardId },
@@ -428,7 +436,10 @@ async function handleRegenerateStoryboardTextTask(job: Job<TaskJobData>) {
 
 async function handleInsertPanelTask(job: Job<TaskJobData>) {
   const payload = (job.data.payload || {}) as AnyObj
-  const storyboardId = typeof payload.storyboardId === 'string' ? payload.storyboardId : job.data.targetId
+  if (job.data.targetType !== 'NovelPromotionStoryboard' || !job.data.targetId) {
+    throw new Error('INSERT_PANEL_TASK_TARGET_INVALID: targetType must be NovelPromotionStoryboard')
+  }
+  const storyboardId = typeof payload.storyboardId === 'string' ? payload.storyboardId.trim() : ''
   const insertAfterPanelId = typeof payload.insertAfterPanelId === 'string' ? payload.insertAfterPanelId : ''
   const userInput = typeof payload.userInput === 'string'
     ? payload.userInput
@@ -436,8 +447,14 @@ async function handleInsertPanelTask(job: Job<TaskJobData>) {
       ? payload.prompt
       : ''
 
-  if (!storyboardId || !insertAfterPanelId || !userInput) {
-    throw new Error('insert_panel requires storyboardId/insertAfterPanelId/userInput')
+  if (!storyboardId) {
+    throw new Error('INSERT_PANEL_PAYLOAD_STORYBOARD_ID_REQUIRED: payload.storyboardId is required')
+  }
+  if (storyboardId !== job.data.targetId) {
+    throw new Error('INSERT_PANEL_PAYLOAD_STORYBOARD_ID_MISMATCH: payload.storyboardId must equal task.targetId')
+  }
+  if (!insertAfterPanelId || !userInput) {
+    throw new Error('INSERT_PANEL_PAYLOAD_REQUIRED: payload.insertAfterPanelId and payload.userInput are required')
   }
 
   const storyboard = await prisma.novelPromotionStoryboard.findUnique({

@@ -8,6 +8,7 @@ export type SideEffectWarningCode =
   | 'ASSET_HUB_LABEL_UPDATE_FAILED'
   | 'CHARACTER_APPEARANCE_DELETE_COS_FAILED'
   | 'CHARACTER_APPEARANCE_IMAGE_URLS_PARSE_FAILED'
+  | 'LOCATION_CONFIRM_SELECTION_DELETE_COS_FAILED'
 
 export type SideEffectWarning = {
   code: SideEffectWarningCode

@@ -28,6 +28,7 @@ import {
   type JsonRecord,
 } from './script-to-storyboard-helpers'
 import { buildPrompt, getPromptTemplate, PROMPT_IDS } from '@/lib/prompt-i18n'
+import { resolveTaskAnalysisModel } from './analysis-model'
 
 type AnyObj = Record<string, unknown>
 
@@ -49,7 +50,6 @@ export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
     throw new Error('TASK_PAYLOAD_TARGET_MISMATCH: payload.episodeId must equal task.targetId')
   }
   const episodeId = payloadEpisodeId
-  const inputModel = typeof payload.model === 'string' ? payload.model.trim() : ''
   const reasoning = payload.reasoning !== false
   const requestedReasoningEffort = parseEffort(payload.reasoningEffort)
   const temperature = parseTemperature(payload.temperature)
@@ -97,7 +97,7 @@ export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
     throw new Error('No clips found')
   }
 
-  const model = inputModel || novelData.analysisModel || ''
+  const model = resolveTaskAnalysisModel(payload, novelData.analysisModel)
   if (!model) {
     throw new Error('analysisModel is not configured')
   }

@@ -25,6 +25,7 @@ import {
   resolveClipRecordId,
 } from './story-to-script-helpers'
 import { getPromptTemplate, PROMPT_IDS } from '@/lib/prompt-i18n'
+import { resolveTaskAnalysisModel } from './analysis-model'
 
 function isReasoningEffort(value: unknown): value is 'minimal' | 'low' | 'medium' | 'high' {
   return value === 'minimal' || value === 'low' || value === 'medium' || value === 'high'
@@ -48,7 +49,6 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
   if (!content) {
     throw new Error('TASK_PAYLOAD_CONTENT_REQUIRED: payload.content is required')
   }
-  const inputModel = asString(payload.model).trim()
   const reasoning = payload.reasoning !== false
   const requestedReasoningEffort = parseEffort(payload.reasoningEffort)
   const temperature = parseTemperature(payload.temperature)
@@ -94,7 +94,7 @@ export async function handleStoryToScriptTask(job: Job<TaskJobData>) {
     throw new Error('Episode not found')
   }
 
-  const model = inputModel || novelData.analysisModel || ''
+  const model = resolveTaskAnalysisModel(payload, novelData.analysisModel)
   if (!model) {
     throw new Error('analysisModel is not configured')
   }

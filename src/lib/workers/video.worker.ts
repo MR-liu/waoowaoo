@@ -216,6 +216,17 @@ async function handleLipSyncTask(job: Job<TaskJobData>) {
   const panel = await prisma.novelPromotionPanel.findUnique({ where: { id: job.data.targetId } })
   if (!panel) throw new Error('Lip-sync panel not found')
   if (!panel.videoUrl) throw new Error('Panel has no base video')
+  const payloadStoryboardId = typeof payload.storyboardId === 'string' ? payload.storyboardId.trim() : ''
+  if (payloadStoryboardId && payloadStoryboardId !== panel.storyboardId) {
+    throw new Error('LIP_SYNC_PAYLOAD_STORYBOARD_MISMATCH: payload.storyboardId must match target panel')
+  }
+  const payloadPanelIndex = payload.panelIndex
+  if (payloadPanelIndex !== undefined && payloadPanelIndex !== null) {
+    const parsedPanelIndex = Number(payloadPanelIndex)
+    if (!Number.isFinite(parsedPanelIndex) || Math.floor(parsedPanelIndex) !== panel.panelIndex) {
+      throw new Error('LIP_SYNC_PAYLOAD_PANEL_INDEX_MISMATCH: payload.panelIndex must match target panel')
+    }
+  }
 
   const voiceLineId = typeof payload.voiceLineId === 'string' ? payload.voiceLineId : null
   if (!voiceLineId) throw new Error('Lip-sync task missing voiceLineId')

@@ -355,6 +355,8 @@ model Project {
   updatedAt          DateTime               @default(now()) @updatedAt
   lastAccessedAt     DateTime?
   novelPromotionData NovelPromotionProject?
+  tasks              Task[]
+  taskEvents         TaskEvent[]
   user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   usageCosts         UsageCost[]
 
@@ -418,6 +420,8 @@ model User {
   globalVoices       GlobalVoice[]
   tasks              Task[]
   taskEvents         TaskEvent[]
+  balanceFreezes     BalanceFreeze[]
+  balanceTransactions BalanceTransaction[]
 
   @@map("user")
 }
@@ -538,6 +542,8 @@ model BalanceFreeze {
   expiresAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions BalanceTransaction[]
 
   @@index([userId])
   @@index([status])
@@ -562,6 +568,8 @@ model BalanceTransaction {
   taskType     String?  @db.VarChar(64)  // 任务类型 key（与 action 一致），用于前端 i18n
   billingMeta  String?  @db.Text         // 计费详情 JSON: { quantity, unit, model, resolution, duration, tokens... }
   createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  freeze       BalanceFreeze? @relation(fields: [freezeId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([type])
@@ -605,6 +613,7 @@ model Task {
   updatedAt        DateTime  @updatedAt
 
   user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   events TaskEvent[]
 
   @@index([status])
@@ -627,6 +636,7 @@ model TaskEvent {
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, id])
   @@index([taskId])

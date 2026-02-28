@@ -20,6 +20,9 @@ import { rollbackTaskBilling, settleTaskBilling } from '@/lib/billing'
 import { withTextUsageCollection } from '@/lib/billing/runtime-usage'
 import { onProjectNameAvailable } from '@/lib/logging/file-writer'
 import type { NormalizedError } from '@/lib/errors/types'
+import { getTaskFlowMeta } from '@/lib/llm-observe/stage-pipeline'
+import { recordTaskWorkerDuration, recordTaskWorkerLifecycle } from '@/lib/task/metrics'
+import { markObservedSpanError, markObservedSpanSuccess, startObservedSpan } from '@/lib/observability/otel'
 
 const sharedLogger = createScopedLogger({ module: 'worker.shared' })
 
@@ -51,16 +54,28 @@ function readPositiveIntField(payload: Record<string, unknown>, key: string): nu
 
 function extractFlowFields(jobData: TaskJobData): Record<string, unknown> {
   const payload = toObject(jobData.payload)
-  const flowId = readStringField(payload, 'flowId')
-  const flowStageTitle = readStringField(payload, 'flowStageTitle')
-  const flowStageIndex = readPositiveIntField(payload, 'flowStageIndex')
-  const flowStageTotal = readPositiveIntField(payload, 'flowStageTotal')
+  const flowMeta = getTaskFlowMeta(jobData.type)
+  const flowId = readStringField(payload, 'flowId') || flowMeta.flowId
+  const flowStageTitle = readStringField(payload, 'flowStageTitle') || flowMeta.flowStageTitle
+  const flowStageIndex = readPositiveIntField(payload, 'flowStageIndex') || flowMeta.flowStageIndex
+  const flowStageTotal = Math.max(
+    flowStageIndex,
+    readPositiveIntField(payload, 'flowStageTotal') || flowMeta.flowStageTotal,
+  )
+  const stepId = readStringField(payload, 'stepId') || `${flowId}:${String(flowStageIndex)}`
+  const stepIndex = readPositiveIntField(payload, 'stepIndex') || flowStageIndex
+  const stepTotal = Math.max(stepIndex, readPositiveIntField(payload, 'stepTotal') || flowStageTotal)
+  const stepTitle = readStringField(payload, 'stepTitle') || flowStageTitle
 
   return {
-    ...(flowId ? { flowId } : {}),
-    ...(flowStageTitle ? { flowStageTitle } : {}),
-    ...(flowStageIndex ? { flowStageIndex } : {}),
-    ...(flowStageTotal ? { flowStageTotal } : {}),
+    flowId,
+    flowStageTitle,
+    flowStageIndex,
+    flowStageTotal,
+    stepId,
+    stepIndex,
+    stepTotal,
+    stepTitle,
   }
 }
 
@@ -204,6 +219,22 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
   const taskId = data.taskId
   const logger = buildWorkerLogger(data, job.queueName)
   const startedAt = Date.now()
+  const workerSpan = startObservedSpan({
+    name: 'task.worker.lifecycle',
+    context: {
+      requestId: data.trace?.requestId || null,
+      taskId,
+      projectId: data.projectId,
+      userId: data.userId,
+    },
+    attributes: {
+      'waoowaoo.task_type': data.type,
+      'waoowaoo.queue_name': job.queueName,
+      'waoowaoo.target_type': data.targetType,
+      'waoowaoo.target_id': data.targetId,
+    },
+  })
+  let workerOutcome: 'completed' | 'failed' | 'retry_scheduled' | 'terminated' | 'skipped_terminal' | 'unknown' = 'unknown'
   let billingInfo = (data.billingInfo || null) as TaskBillingInfo | null
 
   // Register project name for per-project log file routing
@@ -225,8 +256,19 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
         episodeId: data.episodeId || null,
       },
     })
+    recordTaskWorkerLifecycle({
+      requestId: data.trace?.requestId || null,
+      taskId,
+      projectId: data.projectId,
+      userId: data.userId,
+      taskType: data.type,
+      queueName: job.queueName,
+      outcome: 'started',
+    })
     const markedProcessing = await tryMarkTaskProcessing(taskId)
     if (!markedProcessing) {
+      workerOutcome = 'skipped_terminal'
+      workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
       const rollbackResult = await rollbackTaskBillingForTask({
         taskId,
         billingInfo,
@@ -245,6 +287,16 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
         action: 'worker.skip.terminated',
         message: 'task is not active, skip worker execution',
       })
+      recordTaskWorkerLifecycle({
+        requestId: data.trace?.requestId || null,
+        taskId,
+        projectId: data.projectId,
+        userId: data.userId,
+        taskType: data.type,
+        queueName: job.queueName,
+        outcome: 'skipped_terminal',
+      })
+      markObservedSpanSuccess(workerSpan)
       return
     }
     const processingPayload = withFlowFields(data, {
@@ -303,6 +355,17 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
       durationMs: Date.now() - startedAt,
       details: result || null,
     })
+    workerOutcome = 'completed'
+    workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
+    recordTaskWorkerLifecycle({
+      requestId: data.trace?.requestId || null,
+      taskId,
+      projectId: data.projectId,
+      userId: data.userId,
+      taskType: data.type,
+      queueName: job.queueName,
+      outcome: 'completed',
+    })
     const completedPayload = withFlowFields(data, {
       ...(result || {}),
       displayMode: 'loading',
@@ -330,6 +393,8 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
     })
   } catch (error: unknown) {
     if (error instanceof TaskTerminatedError) {
+      workerOutcome = 'terminated'
+      workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
       if (billingInfo?.billable) {
         billingInfo = (await rollbackTaskBilling({
           id: taskId,
@@ -342,6 +407,16 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
         message: error.message,
         durationMs: Date.now() - startedAt,
       })
+      recordTaskWorkerLifecycle({
+        requestId: data.trace?.requestId || null,
+        taskId,
+        projectId: data.projectId,
+        userId: data.userId,
+        taskType: data.type,
+        queueName: job.queueName,
+        outcome: 'terminated',
+      })
+      markObservedSpanSuccess(workerSpan)
       throw new UnrecoverableError(`Task terminated: ${error.message}`)
     }
 
@@ -382,6 +457,8 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
           },
     }
     if (retryDecision.enabled) {
+      workerOutcome = 'retry_scheduled'
+      workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
       logger.error({
         ...workerFailureLog,
         action: 'worker.failed.retryable',
@@ -391,6 +468,16 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
       logger.error(workerFailureLog)
     }
     if (retryDecision.enabled) {
+      recordTaskWorkerLifecycle({
+        requestId: data.trace?.requestId || null,
+        taskId,
+        projectId: data.projectId,
+        userId: data.userId,
+        taskType: data.type,
+        queueName: job.queueName,
+        outcome: 'retry_scheduled',
+      })
+      markObservedSpanError(workerSpan, error)
       logger.error({
         action: 'worker.retry.scheduled',
         message: 'retryable worker error, queue retry scheduled',
@@ -464,6 +551,18 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
     }
     const markedFailed = await tryMarkTaskFailed(taskId, normalizedError.code, normalizedError.message)
     if (!markedFailed) {
+      workerOutcome = 'skipped_terminal'
+      workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
+      recordTaskWorkerLifecycle({
+        requestId: data.trace?.requestId || null,
+        taskId,
+        projectId: data.projectId,
+        userId: data.userId,
+        taskType: data.type,
+        queueName: job.queueName,
+        outcome: 'skipped_terminal',
+      })
+      markObservedSpanSuccess(workerSpan)
       logger.info({
         action: 'worker.skip.failed',
         message: 'task already terminal, skip failed event',
@@ -471,6 +570,17 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
       })
       throw new UnrecoverableError('task already terminal')
     }
+    workerOutcome = 'failed'
+    workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
+    recordTaskWorkerLifecycle({
+      requestId: data.trace?.requestId || null,
+      taskId,
+      projectId: data.projectId,
+      userId: data.userId,
+      taskType: data.type,
+      queueName: job.queueName,
+      outcome: 'failed',
+    })
     const failedPayload = withFlowFields(data, {
       error: normalizedError,
       displayMode: 'loading',
@@ -499,12 +609,27 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
         }),
       },
     })
+    markObservedSpanError(workerSpan, error)
 
     // Re-throw as UnrecoverableError so BullMQ records the job as failed
     // (without this, BullMQ thinks the job succeeded and never logs failure)
     // UnrecoverableError prevents BullMQ auto-retry since we already handle task state in app layer
     throw new UnrecoverableError(normalizedError.message || 'Task failed')
   } finally {
+    if (workerOutcome === 'completed') {
+      markObservedSpanSuccess(workerSpan)
+    }
+    recordTaskWorkerDuration({
+      requestId: data.trace?.requestId || null,
+      taskId,
+      projectId: data.projectId,
+      userId: data.userId,
+      taskType: data.type,
+      queueName: job.queueName,
+      outcome: workerOutcome,
+      durationMs: Date.now() - startedAt,
+    })
+    workerSpan.end()
     clearInterval(heartbeatTimer)
   }
 }

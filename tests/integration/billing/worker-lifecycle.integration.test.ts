@@ -11,9 +11,25 @@ import { prisma } from '../../helpers/prisma'
 import { resetBillingState } from '../../helpers/db-reset'
 import { createQueuedTask, createTestProject, createTestUser, seedBalance } from '../../helpers/billing-fixtures'
 
+const metricsMock = vi.hoisted(() => ({
+  recordTaskWorkerLifecycle: vi.fn(),
+  recordTaskWorkerDuration: vi.fn(),
+  recordTaskTransitionDenied: vi.fn(),
+  recordTaskTerminalStateMismatch: vi.fn(),
+  recordTaskSubmit: vi.fn(),
+  recordTaskEnqueueResult: vi.fn(),
+  recordTaskEventPublish: vi.fn(),
+  recordTaskSSEConnection: vi.fn(),
+  recordTaskSSEReplayEvents: vi.fn(),
+  recordTaskSSEPayloadParseFailed: vi.fn(),
+  recordTaskSSEConnectionDuration: vi.fn(),
+}))
+
 vi.mock('@/lib/task/publisher', () => ({
   publishTaskEvent: vi.fn(async () => ({})),
 }))
+
+vi.mock('@/lib/task/metrics', () => metricsMock)
 
 async function createPreparedVoiceTask() {
   process.env.BILLING_MODE = 'ENFORCE'
@@ -75,6 +91,9 @@ async function createPreparedVoiceTask() {
 describe('billing/worker lifecycle integration', () => {
   beforeEach(async () => {
     await resetBillingState()
+    for (const fn of Object.values(metricsMock)) {
+      fn.mockReset()
+    }
   })
 
   it('settles billing and marks task completed on success', async () => {
@@ -87,6 +106,23 @@ describe('billing/worker lifecycle integration', () => {
     const billing = task?.billingInfo as TaskBillingInfo
     expect(billing?.billable).toBe(true)
     expect((billing as Extract<TaskBillingInfo, { billable: true }>).status).toBe('settled')
+    expect(metricsMock.recordTaskWorkerLifecycle).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: fixture.taskId,
+      projectId: fixture.project.id,
+      userId: fixture.user.id,
+      taskType: TASK_TYPE.VOICE_LINE,
+      queueName: 'voice',
+      outcome: 'started',
+    }))
+    expect(metricsMock.recordTaskWorkerLifecycle).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: fixture.taskId,
+      outcome: 'completed',
+    }))
+    expect(metricsMock.recordTaskWorkerDuration).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: fixture.taskId,
+      outcome: 'completed',
+      durationMs: expect.any(Number),
+    }))
   })
 
   it('rolls back billing and marks task failed on error', async () => {
@@ -102,6 +138,15 @@ describe('billing/worker lifecycle integration', () => {
     expect(task?.status).toBe('failed')
     const billing = task?.billingInfo as TaskBillingInfo
     expect((billing as Extract<TaskBillingInfo, { billable: true }>).status).toBe('rolled_back')
+    expect(metricsMock.recordTaskWorkerLifecycle).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: fixture.taskId,
+      outcome: 'failed',
+    }))
+    expect(metricsMock.recordTaskWorkerDuration).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: fixture.taskId,
+      outcome: 'failed',
+      durationMs: expect.any(Number),
+    }))
   })
 
   it('keeps task active for queue retry on retryable worker error', async () => {
@@ -117,6 +162,15 @@ describe('billing/worker lifecycle integration', () => {
     expect(task?.status).toBe('processing')
     const billing = task?.billingInfo as TaskBillingInfo
     expect((billing as Extract<TaskBillingInfo, { billable: true }>).status).toBe('frozen')
+    expect(metricsMock.recordTaskWorkerLifecycle).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: fixture.taskId,
+      outcome: 'retry_scheduled',
+    }))
+    expect(metricsMock.recordTaskWorkerDuration).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: fixture.taskId,
+      outcome: 'retry_scheduled',
+      durationMs: expect.any(Number),
+    }))
   })
 
   it('rolls back billing on cancellation path', async () => {
@@ -132,5 +186,14 @@ describe('billing/worker lifecycle integration', () => {
     const billing = task?.billingInfo as TaskBillingInfo
     expect((billing as Extract<TaskBillingInfo, { billable: true }>).status).toBe('rolled_back')
     expect(task?.status).not.toBe('failed')
+    expect(metricsMock.recordTaskWorkerLifecycle).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: fixture.taskId,
+      outcome: 'terminated',
+    }))
+    expect(metricsMock.recordTaskWorkerDuration).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: fixture.taskId,
+      outcome: 'terminated',
+      durationMs: expect.any(Number),
+    }))
   })
 })

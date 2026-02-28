@@ -6,6 +6,8 @@ type WorkerProcessor = (job: Job<TaskJobData>) => Promise<unknown>
 
 type PanelRow = {
   id: string
+  storyboardId: string
+  panelIndex: number
   videoUrl: string | null
   imageUrl: string | null
   videoPrompt: string | null
@@ -84,6 +86,8 @@ vi.mock('@/lib/api-config', () => ({
 function buildPanel(overrides?: Partial<PanelRow>): PanelRow {
   return {
     id: 'panel-1',
+    storyboardId: 'storyboard-1',
+    panelIndex: 1,
     videoUrl: 'cos/base-video.mp4',
     imageUrl: 'cos/panel-image.png',
     videoPrompt: 'panel prompt',
@@ -182,6 +186,38 @@ describe('worker video processor behavior', () => {
     })
 
     await expect(processor!(job)).rejects.toThrow('LIP_SYNC_TASK_TARGET_INVALID')
+  })
+
+  it('LIP_SYNC: payload.storyboardId 与目标 panel 不一致时显式失败', async () => {
+    const processor = workerState.processor
+    expect(processor).toBeTruthy()
+
+    const job = buildJob({
+      type: TASK_TYPE.LIP_SYNC,
+      targetId: 'panel-1',
+      payload: {
+        voiceLineId: 'line-1',
+        storyboardId: 'storyboard-2',
+      },
+    })
+
+    await expect(processor!(job)).rejects.toThrow('LIP_SYNC_PAYLOAD_STORYBOARD_MISMATCH')
+  })
+
+  it('LIP_SYNC: payload.panelIndex 与目标 panel 不一致时显式失败', async () => {
+    const processor = workerState.processor
+    expect(processor).toBeTruthy()
+
+    const job = buildJob({
+      type: TASK_TYPE.LIP_SYNC,
+      targetId: 'panel-1',
+      payload: {
+        voiceLineId: 'line-1',
+        panelIndex: 2,
+      },
+    })
+
+    await expect(processor!(job)).rejects.toThrow('LIP_SYNC_PAYLOAD_PANEL_INDEX_MISMATCH')
   })
 
   it('LIP_SYNC: 正常路径写回 lipSyncVideoUrl 并清理 lipSyncTaskId', async () => {

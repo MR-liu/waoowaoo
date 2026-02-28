@@ -1,5 +1,5 @@
 import { createScopedLogger } from '@/lib/logging/core'
-import { addTaskJob } from './queues'
+import { addTaskJob, getQueueTypeByTaskType } from './queues'
 import { publishTaskEvent } from './publisher'
 import {
   createTask,
@@ -14,6 +14,8 @@ import { buildDefaultTaskBillingInfo, isBillableTaskType, InsufficientBalanceErr
 import { ApiError } from '@/lib/api-errors'
 import { getTaskFlowMeta } from '@/lib/llm-observe/stage-pipeline'
 import type { Locale } from '@/i18n/routing'
+import { recordTaskEnqueueResult, recordTaskSubmit } from './metrics'
+import { withObservedSpan } from '@/lib/observability/otel'
 
 export function toObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -93,34 +95,57 @@ export async function submitTask(params: {
     projectId: params.projectId,
     userId: params.userId,
   })
-
-  const normalizedPayloadBase = normalizeTaskPayload(params.type, params.payload || null)
-  const normalizedPayloadMeta = toObject(normalizedPayloadBase.meta)
-  const normalizedPayload = {
-    ...normalizedPayloadBase,
-    meta: {
-      ...normalizedPayloadMeta,
-      locale: params.locale,
+  return await withObservedSpan({
+    name: 'task.submit',
+    context: {
+      requestId: params.requestId || null,
+      projectId: params.projectId,
+      userId: params.userId,
     },
-  }
-  const computedBillingInfo = isBillableTaskType(params.type)
-    ? buildDefaultTaskBillingInfo(params.type, normalizedPayload)
-    : null
-  const resolvedBillingInfo = computedBillingInfo || params.billingInfo || null
+    attributes: {
+      'waoowaoo.task_type': params.type,
+      'waoowaoo.target_type': params.targetType,
+      'waoowaoo.target_id': params.targetId,
+    },
+    run: async (submitSpan) => {
 
-  const { task, deduped } = await createTask({
-    userId: params.userId,
-    projectId: params.projectId,
-    episodeId: params.episodeId || null,
-    type: params.type,
-    targetType: params.targetType,
-    targetId: params.targetId,
-    payload: normalizedPayload,
-    dedupeKey: params.dedupeKey || null,
-    priority: params.priority,
-    maxAttempts: params.maxAttempts,
-    billingInfo: resolvedBillingInfo || null,
-  })
+      const normalizedPayloadBase = normalizeTaskPayload(params.type, params.payload || null)
+      const normalizedPayloadMeta = toObject(normalizedPayloadBase.meta)
+      const normalizedPayload = {
+        ...normalizedPayloadBase,
+        meta: {
+          ...normalizedPayloadMeta,
+          locale: params.locale,
+        },
+      }
+      const computedBillingInfo = isBillableTaskType(params.type)
+        ? buildDefaultTaskBillingInfo(params.type, normalizedPayload)
+        : null
+      const resolvedBillingInfo = computedBillingInfo || params.billingInfo || null
+
+      const { task, deduped } = await createTask({
+        userId: params.userId,
+        projectId: params.projectId,
+        episodeId: params.episodeId || null,
+        type: params.type,
+        targetType: params.targetType,
+        targetId: params.targetId,
+        payload: normalizedPayload,
+        dedupeKey: params.dedupeKey || null,
+        priority: params.priority,
+        maxAttempts: params.maxAttempts,
+        billingInfo: resolvedBillingInfo || null,
+      })
+      submitSpan.setAttribute('waoowaoo.task_id', task.id)
+      const queueName = getQueueTypeByTaskType(params.type)
+      recordTaskSubmit({
+        requestId: params.requestId || null,
+        taskId: task.id,
+        projectId: params.projectId,
+        userId: params.userId,
+        taskType: params.type,
+        deduped,
+      })
 
   let preparedBillingInfo = (task.billingInfo || resolvedBillingInfo || null) as TaskBillingInfo | null
   if (!deduped && isBillableTaskType(params.type) && (!computedBillingInfo || !computedBillingInfo.billable)) {
@@ -205,12 +230,30 @@ export async function submitTask(params: {
         priority: typeof task.priority === 'number' ? task.priority : 0,
       })
       await markTaskEnqueued(task.id)
+      recordTaskEnqueueResult({
+        requestId: params.requestId || null,
+        taskId: task.id,
+        projectId: params.projectId,
+        userId: params.userId,
+        taskType: params.type,
+        queueName,
+        result: 'enqueued',
+      })
       logger.info({
         action: 'task.submit.enqueued',
         message: 'task enqueued',
         taskId: task.id,
       })
     } catch (error: unknown) {
+      recordTaskEnqueueResult({
+        requestId: params.requestId || null,
+        taskId: task.id,
+        projectId: params.projectId,
+        userId: params.userId,
+        taskType: params.type,
+        queueName,
+        result: 'enqueue_failed',
+      })
       const message = error instanceof Error ? error.message : String(error)
       await markTaskEnqueueFailed(task.id, message || 'queue.add failed')
       const rollbackResult = await rollbackTaskBillingForTask({
@@ -268,11 +311,13 @@ export async function submitTask(params: {
     }
   }
 
-  return {
-    success: true,
-    async: true,
-    taskId: task.id,
-    status: task.status,
-    deduped,
-  }
+      return {
+        success: true,
+        async: true,
+        taskId: task.id,
+        status: task.status,
+        deduped,
+      }
+    },
+  })
 }

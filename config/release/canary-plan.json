@@ -1,0 +1,50 @@
+{
+  "service": "waoowaoo-web",
+  "versioning": "immutable-image-tag",
+  "steps": [
+    {
+      "trafficPercent": 5,
+      "holdMinutes": 15,
+      "entryCriteria": [
+        "release gate passed",
+        "p0 queue backlog stable"
+      ],
+      "rollbackCriteria": [
+        "taskFailureRate >= 0.05",
+        "terminalMismatchRate >= 0.005"
+      ]
+    },
+    {
+      "trafficPercent": 20,
+      "holdMinutes": 30,
+      "entryCriteria": [
+        "no critical alert during previous hold"
+      ],
+      "rollbackCriteria": [
+        "taskFailureRate >= 0.05",
+        "maxQueueBacklog >= 500"
+      ]
+    },
+    {
+      "trafficPercent": 50,
+      "holdMinutes": 60,
+      "entryCriteria": [
+        "sse payload parse failed remains baseline"
+      ],
+      "rollbackCriteria": [
+        "terminalMismatchRate >= 0.005",
+        "staleProcessingCount >= 30"
+      ]
+    },
+    {
+      "trafficPercent": 100,
+      "holdMinutes": 120,
+      "entryCriteria": [
+        "all p0 alerts level=ok"
+      ],
+      "rollbackCriteria": [
+        "billingCompensationFailedCount >= 5"
+      ]
+    }
+  ]
+}

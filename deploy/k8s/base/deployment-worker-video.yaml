@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: waoowaoo-worker-video
+  namespace: waoowaoo-prod
+  labels:
+    app.kubernetes.io/name: waoowaoo
+    app.kubernetes.io/component: worker-video
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: waoowaoo
+      app.kubernetes.io/component: worker-video
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: waoowaoo
+        app.kubernetes.io/component: worker-video
+    spec:
+      containers:
+        - name: worker-video
+          image: waoowaoo:latest
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "npm run start:worker"]
+          env:
+            - name: WORKER_QUEUES
+              value: "video"
+          envFrom:
+            - configMapRef:
+                name: waoowaoo-app-config
+            - secretRef:
+                name: waoowaoo-app-secret
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "6Gi"
+      terminationGracePeriodSeconds: 30

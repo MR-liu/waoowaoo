@@ -25,10 +25,14 @@ async function processImageTask(job: Job<TaskJobData>) {
       return await handleLocationImageTask(job)
     case TASK_TYPE.REGENERATE_GROUP: {
       const payload = (job.data.payload || {}) as AnyObj
-      if (payload.type === 'character') {
+      const regenerateType = typeof payload.type === 'string' ? payload.type.trim() : ''
+      if (regenerateType === 'character') {
         return await handleCharacterImageTask(job)
       }
-      return await handleLocationImageTask(job)
+      if (regenerateType === 'location') {
+        return await handleLocationImageTask(job)
+      }
+      throw new Error('REGENERATE_GROUP_PAYLOAD_TYPE_INVALID: payload.type must be "character" or "location"')
     }
     case TASK_TYPE.MODIFY_ASSET_IMAGE:
       return await handleModifyAssetImageTask(job)

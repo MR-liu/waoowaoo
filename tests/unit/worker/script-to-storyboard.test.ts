@@ -257,6 +257,29 @@ describe('worker script-to-storyboard behavior', () => {
     await expect(handleScriptToStoryboardTask(job)).rejects.toThrow('TASK_PAYLOAD_EPISODE_ID_MISMATCH')
   })
 
+  it('payload.model 与 payload.analysisModel 冲突时显式失败', async () => {
+    const job = buildJob({
+      episodeId: 'episode-1',
+      model: 'llm::a',
+      analysisModel: 'llm::b',
+    })
+
+    await expect(handleScriptToStoryboardTask(job)).rejects.toThrow('TASK_PAYLOAD_MODEL_MISMATCH')
+  })
+
+  it('payload.analysisModel 存在时优先使用冻结模型', async () => {
+    const job = buildJob({
+      episodeId: 'episode-1',
+      analysisModel: 'llm::frozen-model',
+    })
+
+    await handleScriptToStoryboardTask(job)
+
+    expect(resolveProjectModelCapabilityGenerationOptionsMock).toHaveBeenCalledWith(expect.objectContaining({
+      modelKey: 'llm::frozen-model',
+    }))
+  })
+
   it('成功路径: 写入 voice line 时包含 matchedPanel 映射后的 panelId', async () => {
     const job = buildJob({ episodeId: 'episode-1' })
 

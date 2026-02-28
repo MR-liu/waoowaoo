@@ -37,6 +37,7 @@ const withPrismaRetryMock = vi.hoisted(() => vi.fn(async <T>(fn: () => Promise<T
 const listEventsAfterMock = vi.hoisted(() => vi.fn(async () => []))
 const listTaskLifecycleEventsMock = vi.hoisted(() => vi.fn(async () => []))
 const addChannelListenerMock = vi.hoisted(() => vi.fn(async () => async () => undefined))
+const prismaTaskFindManyMock = vi.hoisted(() => vi.fn(async () => []))
 const subscriberState = vi.hoisted(() => ({
   listener: null as ((message: string) => void) | null,
 }))
@@ -74,12 +75,16 @@ vi.mock('@/lib/task/queues', () => ({
   removeTaskJob: removeTaskJobMock,
 }))
 
-vi.mock('@/lib/task/publisher', () => ({
-  publishTaskEvent: publishTaskEventMock,
-  getProjectChannel: vi.fn((projectId: string) => `project:${projectId}`),
-  listEventsAfter: listEventsAfterMock,
-  listTaskLifecycleEvents: listTaskLifecycleEventsMock,
-}))
+vi.mock('@/lib/task/publisher', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/task/publisher')>('@/lib/task/publisher')
+  return {
+    ...actual,
+    publishTaskEvent: publishTaskEventMock,
+    getProjectChannel: vi.fn((projectId: string) => `project:${projectId}`),
+    listEventsAfter: listEventsAfterMock,
+    listTaskLifecycleEvents: listTaskLifecycleEventsMock,
+  }
+})
 
 vi.mock('@/lib/task/state-service', () => ({
   queryTaskTargetStates: queryTaskTargetStatesMock,
@@ -98,7 +103,7 @@ vi.mock('@/lib/sse/shared-subscriber', () => ({
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     task: {
-      findMany: vi.fn(async () => []),
+      findMany: prismaTaskFindManyMock,
     },
   },
 }))
@@ -163,6 +168,7 @@ describe('api contract - task infra routes (behavior)', () => {
       return async () => undefined
     })
     listTaskLifecycleEventsMock.mockResolvedValue([])
+    prismaTaskFindManyMock.mockResolvedValue([])
   })
 
   it('GET /api/tasks: unauthenticated -> 401; authenticated -> 200 with caller-owned tasks', async () => {
@@ -427,6 +433,54 @@ describe('api contract - task infra routes (behavior)', () => {
     expect(firstChunk.done).toBe(false)
     const decoded = new TextDecoder().decode(firstChunk.value)
     expect(decoded).toContain('event:')
+    await reader!.cancel()
+  })
+
+  it('GET /api/sse: active snapshot payload uses normalized lifecycle/flow/step fields', async () => {
+    const { GET } = await import('@/app/api/sse/route')
+    prismaTaskFindManyMock.mockResolvedValueOnce([
+      {
+        id: 'task-snapshot-1',
+        type: 'story_to_script_run',
+        targetType: 'NovelPromotionEpisode',
+        targetId: 'episode-1',
+        episodeId: 'episode-1',
+        userId: 'user-1',
+        status: 'processing',
+        progress: 45,
+        payload: {
+          flowId: 'story_to_script',
+          flowStageIndex: 2,
+          flowStageTotal: 4,
+          flowStageTitle: '脚本生成',
+        },
+        updatedAt: new Date('2026-02-27T00:00:10.000Z'),
+      },
+    ])
+
+    const req = buildMockRequest({
+      path: '/api/sse',
+      method: 'GET',
+      query: { projectId: 'project-1', episodeId: 'episode-1' },
+    })
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+
+    const reader = res.body?.getReader()
+    expect(reader).toBeTruthy()
+    const firstChunk = await reader!.read()
+    expect(firstChunk.done).toBe(false)
+    const decoded = new TextDecoder().decode(firstChunk.value)
+
+    expect(decoded).toContain('"taskId":"task-snapshot-1"')
+    expect(decoded).toContain('"lifecycleType":"task.processing"')
+    expect(decoded).toContain('"flowId":"story_to_script"')
+    expect(decoded).toContain('"flowStageIndex":2')
+    expect(decoded).toContain('"flowStageTotal":4')
+    expect(decoded).toContain('"stepId":"story_to_script:2"')
+    expect(decoded).toContain('"stepIndex":2')
+    expect(decoded).toContain('"stepTotal":4')
+
     await reader!.cancel()
   })
 

@@ -1,10 +1,11 @@
-import { logInfo as _ulogInfo, logWarn as _ulogWarn } from '@/lib/logging/core'
+import { logInfo as _ulogInfo } from '@/lib/logging/core'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { deleteCOSObject } from '@/lib/cos'
 import { resolveStorageKeyFromMediaValue } from '@/lib/media/service'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { runSideEffectWithWarning, type SideEffectWarning } from '@/lib/api/side-effect-warning'
 
 /**
  * POST - 确认场景选择并删除未选中的候选图片
@@ -63,17 +64,25 @@ export const POST = apiHandler(async (
 
   // 删除未选中的图片
   const deletedImages: string[] = []
+  const cleanupWarnings: SideEffectWarning[] = []
   const imagesToDelete = images.filter((img) => img.id !== selectedImage.id)
 
   for (const img of imagesToDelete) {
     if (img.imageUrl) {
       const key = await resolveStorageKeyFromMediaValue(img.imageUrl)
       if (key) {
-        try {
-          await deleteCOSObject(key)
+        const warning = await runSideEffectWithWarning({
+          code: 'LOCATION_CONFIRM_SELECTION_DELETE_COS_FAILED',
+          target: `locationImage:${img.id}`,
+          logPrefix: '[Location Confirm Selection] 删除场景候选图失败',
+          run: async () => {
+            await deleteCOSObject(key)
+          },
+        })
+        if (!warning) {
           deletedImages.push(key)
-        } catch {
-          _ulogWarn('Failed to delete COS image:', key)
+        } else {
+          cleanupWarnings.push(warning)
         }
       }
     }
@@ -107,6 +116,8 @@ export const POST = apiHandler(async (
   return NextResponse.json({
     success: true,
     message: '已确认选择，其他候选图片已删除',
-    deletedCount: deletedImages.length
+    deletedCount: deletedImages.length,
+    cleanupWarningCount: cleanupWarnings.length,
+    cleanupWarnings,
   })
 })

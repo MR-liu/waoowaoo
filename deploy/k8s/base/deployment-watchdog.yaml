@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: waoowaoo-watchdog
+  namespace: waoowaoo-prod
+  labels:
+    app.kubernetes.io/name: waoowaoo
+    app.kubernetes.io/component: watchdog
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: waoowaoo
+      app.kubernetes.io/component: watchdog
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: waoowaoo
+        app.kubernetes.io/component: watchdog
+    spec:
+      containers:
+        - name: watchdog
+          image: waoowaoo:latest
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "npm run start:watchdog"]
+          envFrom:
+            - configMapRef:
+                name: waoowaoo-app-config
+            - secretRef:
+                name: waoowaoo-app-secret
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
