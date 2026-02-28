@@ -9,6 +9,11 @@
   - `npm run release:gate`
 - 严格模式（包含 observability 阻断）：
   - `npm run release:gate:strict`
+- Dry-run（仅生成计划与报告，不执行检查）：
+  - `tsx scripts/release-gate.ts --dry-run`
+- 报告 artifact（默认写入 `.artifacts/release/`）：
+  - `tsx scripts/release-gate.ts --artifact-dir=.artifacts/release`
+  - `tsx scripts/release-gate.ts --artifact-file=.artifacts/release/release-gate-manual.json`
 - 可选跳过项：
   - `tsx scripts/release-gate.ts --skip-observability`
   - `tsx scripts/release-gate.ts --skip-regression`

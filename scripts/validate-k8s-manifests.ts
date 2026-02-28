@@ -1,28 +1,88 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { validateK8sManifest, type K8sManifestContract, type K8sValidationIssue } from '@/lib/release/k8s'
 
-type ValidationIssue = {
-  file: string
-  message: string
-}
-
-const REQUIRED_FILES = [
-  'deploy/k8s/base/kustomization.yaml',
-  'deploy/k8s/base/namespace.yaml',
-  'deploy/k8s/base/configmap-app.yaml',
-  'deploy/k8s/base/service-web.yaml',
-  'deploy/k8s/base/deployment-web.yaml',
-  'deploy/k8s/base/deployment-worker-image.yaml',
-  'deploy/k8s/base/deployment-worker-video.yaml',
-  'deploy/k8s/base/deployment-worker-voice.yaml',
-  'deploy/k8s/base/deployment-worker-text.yaml',
-  'deploy/k8s/base/deployment-watchdog.yaml',
-  'deploy/k8s/base/hpa-web.yaml',
-  'deploy/k8s/base/hpa-worker-image.yaml',
-  'deploy/k8s/base/hpa-worker-video.yaml',
-  'deploy/k8s/base/hpa-worker-voice.yaml',
-  'deploy/k8s/base/hpa-worker-text.yaml',
-  'deploy/k8s/base/secret-app.template.yaml',
+const REQUIRED_MANIFESTS: K8sManifestContract[] = [
+  {
+    file: 'deploy/k8s/base/kustomization.yaml',
+    expectedApiVersion: 'kustomize.config.k8s.io/v1beta1',
+    expectedKind: 'Kustomization',
+  },
+  {
+    file: 'deploy/k8s/base/namespace.yaml',
+    expectedApiVersion: 'v1',
+    expectedKind: 'Namespace',
+  },
+  {
+    file: 'deploy/k8s/base/configmap-app.yaml',
+    expectedApiVersion: 'v1',
+    expectedKind: 'ConfigMap',
+  },
+  {
+    file: 'deploy/k8s/base/service-web.yaml',
+    expectedApiVersion: 'v1',
+    expectedKind: 'Service',
+  },
+  {
+    file: 'deploy/k8s/base/deployment-web.yaml',
+    expectedApiVersion: 'apps/v1',
+    expectedKind: 'Deployment',
+  },
+  {
+    file: 'deploy/k8s/base/deployment-worker-image.yaml',
+    expectedApiVersion: 'apps/v1',
+    expectedKind: 'Deployment',
+  },
+  {
+    file: 'deploy/k8s/base/deployment-worker-video.yaml',
+    expectedApiVersion: 'apps/v1',
+    expectedKind: 'Deployment',
+  },
+  {
+    file: 'deploy/k8s/base/deployment-worker-voice.yaml',
+    expectedApiVersion: 'apps/v1',
+    expectedKind: 'Deployment',
+  },
+  {
+    file: 'deploy/k8s/base/deployment-worker-text.yaml',
+    expectedApiVersion: 'apps/v1',
+    expectedKind: 'Deployment',
+  },
+  {
+    file: 'deploy/k8s/base/deployment-watchdog.yaml',
+    expectedApiVersion: 'apps/v1',
+    expectedKind: 'Deployment',
+  },
+  {
+    file: 'deploy/k8s/base/hpa-web.yaml',
+    expectedApiVersion: 'autoscaling/v2',
+    expectedKind: 'HorizontalPodAutoscaler',
+  },
+  {
+    file: 'deploy/k8s/base/hpa-worker-image.yaml',
+    expectedApiVersion: 'autoscaling/v2',
+    expectedKind: 'HorizontalPodAutoscaler',
+  },
+  {
+    file: 'deploy/k8s/base/hpa-worker-video.yaml',
+    expectedApiVersion: 'autoscaling/v2',
+    expectedKind: 'HorizontalPodAutoscaler',
+  },
+  {
+    file: 'deploy/k8s/base/hpa-worker-voice.yaml',
+    expectedApiVersion: 'autoscaling/v2',
+    expectedKind: 'HorizontalPodAutoscaler',
+  },
+  {
+    file: 'deploy/k8s/base/hpa-worker-text.yaml',
+    expectedApiVersion: 'autoscaling/v2',
+    expectedKind: 'HorizontalPodAutoscaler',
+  },
+  {
+    file: 'deploy/k8s/base/secret-app.template.yaml',
+    expectedApiVersion: 'v1',
+    expectedKind: 'Secret',
+  },
 ] as const
 
 const WORKER_LANE_FILES = [
@@ -36,18 +96,30 @@ function readFile(file: string): string {
   return fs.readFileSync(path.resolve(process.cwd(), file), 'utf8')
 }
 
-function validateFilesExist(): ValidationIssue[] {
-  const issues: ValidationIssue[] = []
-  for (const file of REQUIRED_FILES) {
-    if (!fs.existsSync(path.resolve(process.cwd(), file))) {
-      issues.push({ file, message: 'missing required file' })
+function validateFilesExist(): K8sValidationIssue[] {
+  const issues: K8sValidationIssue[] = []
+  for (const manifest of REQUIRED_MANIFESTS) {
+    if (!fs.existsSync(path.resolve(process.cwd(), manifest.file))) {
+      issues.push({ file: manifest.file, message: 'missing required file' })
     }
   }
   return issues
 }
 
-function validateWorkerQueueBindings(): ValidationIssue[] {
-  const issues: ValidationIssue[] = []
+function validateSchemaContracts(): K8sValidationIssue[] {
+  const issues: K8sValidationIssue[] = []
+  for (const manifest of REQUIRED_MANIFESTS) {
+    if (!fs.existsSync(path.resolve(process.cwd(), manifest.file))) {
+      continue
+    }
+    const content = readFile(manifest.file)
+    issues.push(...validateK8sManifest(manifest, content))
+  }
+  return issues
+}
+
+function validateWorkerQueueBindings(): K8sValidationIssue[] {
+  const issues: K8sValidationIssue[] = []
   for (const item of WORKER_LANE_FILES) {
     const content = readFile(item.file)
     if (!content.includes('npm run start:worker')) {
@@ -63,8 +135,8 @@ function validateWorkerQueueBindings(): ValidationIssue[] {
   return issues
 }
 
-function validateWebSplitMode(): ValidationIssue[] {
-  const issues: ValidationIssue[] = []
+function validateWebSplitMode(): K8sValidationIssue[] {
+  const issues: K8sValidationIssue[] = []
   const webDeployment = readFile('deploy/k8s/base/deployment-web.yaml')
   if (!webDeployment.includes('npm run start:next')) {
     issues.push({
@@ -78,6 +150,7 @@ function validateWebSplitMode(): ValidationIssue[] {
 function main() {
   const issues = [
     ...validateFilesExist(),
+    ...validateSchemaContracts(),
     ...validateWorkerQueueBindings(),
     ...validateWebSplitMode(),
   ]

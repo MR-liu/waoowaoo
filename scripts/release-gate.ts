@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import { evaluateReleaseGate, type ReleaseGateCheck } from '@/lib/release/gate'
+import { buildReleaseArtifactPath, writeJsonArtifact } from '@/lib/release/report'
 
 type CommandCheck = {
   id: string
@@ -9,6 +10,13 @@ type CommandCheck = {
 
 function parseFlag(flag: string): boolean {
   return process.argv.includes(`--${flag}`)
+}
+
+function parseValueFlag(flag: string): string | undefined {
+  const prefix = `--${flag}=`
+  const matched = process.argv.find((arg) => arg.startsWith(prefix))
+  if (!matched) return undefined
+  return matched.slice(prefix.length).trim() || undefined
 }
 
 async function runCommandCheck(input: CommandCheck): Promise<ReleaseGateCheck> {
@@ -52,6 +60,9 @@ async function main() {
   const skipRegression = parseFlag('skip-regression')
   const skipObservability = parseFlag('skip-observability')
   const strict = parseFlag('strict')
+  const dryRun = parseFlag('dry-run')
+  const artifactFileArg = parseValueFlag('artifact-file')
+  const artifactDirArg = parseValueFlag('artifact-dir')
 
   const checks: CommandCheck[] = []
   checks.push({
@@ -84,22 +95,43 @@ async function main() {
   }
 
   const checkResults: ReleaseGateCheck[] = []
-  for (const check of checks) {
-    process.stdout.write(`[release-gate] running ${check.id}: ${check.command}\n`)
-    const result = await runCommandCheck(check)
-    checkResults.push(result)
+  if (!dryRun) {
+    for (const check of checks) {
+      process.stdout.write(`[release-gate] running ${check.id}: ${check.command}\n`)
+      const result = await runCommandCheck(check)
+      checkResults.push(result)
+    }
   }
 
-  const gate = evaluateReleaseGate(checkResults)
-  const report = {
-    generatedAt: new Date().toISOString(),
+  const gate = dryRun ? null : evaluateReleaseGate(checkResults)
+  const generatedAt = new Date().toISOString()
+  const artifactPayload = {
+    generatedAt,
     strict,
+    dryRun,
+    plannedChecks: checks,
     checks: checkResults,
     gate,
   }
+  const artifactPath = artifactFileArg
+    ? writeJsonArtifact(artifactFileArg, artifactPayload)
+    : writeJsonArtifact(
+        buildReleaseArtifactPath('release-gate', { artifactDir: artifactDirArg }),
+        artifactPayload,
+      )
+
+  const report = {
+    ...artifactPayload,
+    artifactPath,
+  }
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
 
-  if (!gate.passed) {
+  if (dryRun) {
+    process.stdout.write('[release-gate] dry-run completed, no checks were executed\n')
+    return
+  }
+
+  if (gate && !gate.passed) {
     process.exitCode = 1
   }
 }
