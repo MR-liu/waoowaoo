@@ -134,7 +134,14 @@ function resolveTextCostFromUsage(
     const outTokens = Math.max(0, Math.floor(Number(item.outputTokens || 0)))
     const model = item.model || 'unknown'
     const hasBillableTokens = inTokens > 0 || outTokens > 0
-    const itemCost = hasBillableTokens ? normalizeMoney(calcText(model, inTokens, outTokens, customPricing)) : 0
+    let itemCost = 0
+    if (hasBillableTokens) {
+      try {
+        itemCost = normalizeMoney(calcText(model, inTokens, outTokens, customPricing))
+      } catch {
+        // Uncatalogued model (e.g. user-configured custom model): skip cost calculation
+      }
+    }
 
     inputTokens += inTokens
     outputTokens += outTokens

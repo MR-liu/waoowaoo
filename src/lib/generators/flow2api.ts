@@ -26,18 +26,6 @@ interface Flow2ApiChatCompletionPayload {
         role: 'user'
         content: string | Flow2ApiMultimodalPart[]
     }>
-    stream: boolean
-}
-
-interface Flow2ApiChatCompletionResponse {
-    choices?: Array<{
-        message?: {
-            content?: string | null
-        }
-    }>
-    error?: {
-        message?: string
-    }
 }
 
 interface Flow2ApiVideoOptions {
@@ -214,7 +202,7 @@ async function normalizeVideoImageToDataUrl(input: string): Promise<string> {
     return await imageUrlToBase64(normalized)
 }
 
-async function requestFlow2ApiCompletion(input: {
+async function requestFlow2ApiCompletionStream(input: {
     baseUrl: string
     apiKey: string
     payload: Flow2ApiChatCompletionPayload
@@ -225,7 +213,7 @@ async function requestFlow2ApiCompletion(input: {
             Authorization: `Bearer ${input.apiKey}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify(input.payload),
+        body: JSON.stringify({ ...input.payload, stream: true }),
         signal: AbortSignal.timeout(FLOW2API_TIMEOUT_MS),
     })
 
@@ -234,13 +222,56 @@ async function requestFlow2ApiCompletion(input: {
         throw new Error(`FLOW2API_REQUEST_FAILED: ${response.status} ${errorText.slice(0, 200)}`)
     }
 
-    const data = await response.json() as Flow2ApiChatCompletionResponse
-    if (data.error?.message) {
-        throw new Error(`FLOW2API_ERROR: ${data.error.message}`)
+    const body = response.body
+    if (!body) {
+        throw new Error('FLOW2API_EMPTY_RESPONSE')
     }
 
-    const content = data.choices?.[0]?.message?.content
-    if (typeof content !== 'string' || !content.trim()) {
+    const reader = body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let contentParts: string[] = []
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+                const trimmed = line.trim()
+                if (!trimmed || trimmed === 'data: [DONE]') continue
+
+                // flow2api may emit bare JSON error lines without "data: " prefix,
+                // sometimes concatenated with "data: [DONE]" on the same line
+                const jsonStr = trimmed.startsWith('data: ')
+                    ? trimmed.slice(6)
+                    : trimmed.replace(/data:\s*\[DONE\]\s*$/, '')
+                if (!jsonStr || jsonStr === '[DONE]') continue
+                try {
+                    const chunk = JSON.parse(jsonStr)
+                    if (chunk.error?.message) {
+                        throw new Error(`FLOW2API_ERROR: ${chunk.error.message}`)
+                    }
+                    if (!trimmed.startsWith('data: ')) continue
+                    const delta = chunk.choices?.[0]?.delta
+                    if (typeof delta?.content === 'string') {
+                        contentParts.push(delta.content)
+                    }
+                } catch (err) {
+                    if (err instanceof Error && err.message.startsWith('FLOW2API_ERROR:')) throw err
+                }
+            }
+        }
+    } finally {
+        reader.releaseLock()
+    }
+
+    const content = contentParts.join('')
+    if (!content.trim()) {
         throw new Error('FLOW2API_EMPTY_RESPONSE')
     }
     return content
@@ -306,13 +337,12 @@ export class Flow2ApiImageGenerator extends BaseImageGenerator {
                 })),
             ]
 
-        const responseContent = await requestFlow2ApiCompletion({
+        const responseContent = await requestFlow2ApiCompletionStream({
             baseUrl: config.baseUrl,
             apiKey: config.apiKey,
             payload: {
                 model: requestModel,
                 messages: [{ role: 'user', content }],
-                stream: false,
             },
         })
 
@@ -392,13 +422,12 @@ export class Flow2ApiVideoGenerator extends BaseVideoGenerator {
             })),
         ]
 
-        const responseContent = await requestFlow2ApiCompletion({
+        const responseContent = await requestFlow2ApiCompletionStream({
             baseUrl: config.baseUrl,
             apiKey: config.apiKey,
             payload: {
                 model: requestModel,
                 messages: [{ role: 'user', content }],
-                stream: false,
             },
         })
 

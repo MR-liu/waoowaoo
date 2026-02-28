@@ -18,4 +18,12 @@ describe('async poll externalId contract', () => {
   it('requires endpoint when formatting FAL externalId', () => {
     expect(() => formatExternalId('FAL', 'VIDEO', 'req_123')).toThrow(/requires endpoint/)
   })
+
+  it('supports NEWAPI video externalId format', () => {
+    const parsed = parseExternalId('NEWAPI:VIDEO:task_456')
+    expect(parsed.provider).toBe('NEWAPI')
+    expect(parsed.type).toBe('VIDEO')
+    expect(parsed.requestId).toBe('task_456')
+    expect(formatExternalId('NEWAPI', 'VIDEO', 'task_456')).toBe('NEWAPI:VIDEO:task_456')
+  })
 })

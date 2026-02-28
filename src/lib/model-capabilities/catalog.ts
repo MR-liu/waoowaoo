@@ -165,6 +165,7 @@ export function listBuiltinCapabilityCatalog(): BuiltinCapabilityCatalogEntry[] 
 const CAPABILITY_PROVIDER_ALIASES: Readonly<Record<string, string>> = {
   'gemini-compatible': 'google',
   flow2api: 'google',
+  newapi: 'google',
 }
 
 export function findBuiltinCapabilityCatalogEntry(

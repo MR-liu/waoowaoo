@@ -43,14 +43,85 @@ function cleanJsonStringForParse(input: string): string {
   })
 }
 
+/**
+ * Escape unescaped quotes and control chars inside JSON string values.
+ * When a `"` is encountered inside a string, look ahead to decide if
+ * it's a valid closing quote (followed by `,` `}` `]` `:` or EOF)
+ * or a literal quote that should be escaped.
+ */
+function repairJsonStrings(input: string): string {
+  let out = ''
+  let inString = false
+  let escaped = false
+
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i]
+
+    if (!inString) {
+      if (ch === '"') inString = true
+      out += ch
+      continue
+    }
+
+    if (escaped) {
+      out += ch
+      escaped = false
+      continue
+    }
+
+    if (ch === '\\') {
+      out += ch
+      escaped = true
+      continue
+    }
+
+    if (ch === '"') {
+      let j = i + 1
+      while (j < input.length && (input[j] === ' ' || input[j] === '\t' || input[j] === '\r' || input[j] === '\n')) {
+        j += 1
+      }
+      const next = input[j]
+      if (next === undefined || next === ',' || next === '}' || next === ']' || next === ':') {
+        inString = false
+        out += ch
+      } else {
+        out += '\\"'
+      }
+      continue
+    }
+
+    if (ch === '\n') { out += '\\n'; continue }
+    if (ch === '\r') { out += '\\r'; continue }
+    if (ch === '\t') { out += '\\t'; continue }
+    const code = ch.charCodeAt(0)
+    if (code >= 0 && code < 0x20) {
+      out += `\\u${code.toString(16).padStart(4, '0')}`
+      continue
+    }
+
+    out += ch
+  }
+
+  return out
+}
+
 function parseSplitResponse(aiResponse: string): SplitResponse {
   const jsonMatch = aiResponse.match(/```json\s*([\s\S]*?)\s*```/) || aiResponse.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
     throw new Error('Failed to parse AI response: missing JSON payload')
   }
 
-  const jsonText = cleanJsonStringForParse(jsonMatch[1] || jsonMatch[0])
-  const parsed = JSON.parse(jsonText) as SplitResponse
+  const rawJson = jsonMatch[1] || jsonMatch[0]
+  let parsed: SplitResponse | undefined
+
+  // Try simple cleanup first
+  try {
+    parsed = JSON.parse(cleanJsonStringForParse(rawJson)) as SplitResponse
+  } catch {
+    // Fallback: repair unescaped quotes and control chars
+    parsed = JSON.parse(repairJsonStrings(rawJson)) as SplitResponse
+  }
+
   if (!parsed || !Array.isArray(parsed.episodes) || parsed.episodes.length === 0) {
     throw new Error('Failed to parse AI response: invalid episodes payload')
   }

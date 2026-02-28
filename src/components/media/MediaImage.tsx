@@ -20,6 +20,10 @@ function isStableMediaRoute(src: string) {
   return src.startsWith('/m/')
 }
 
+export function shouldDisableNextImageOptimization(src: string): boolean {
+  return isStableMediaRoute(src)
+}
+
 export function MediaImage({
   src,
   alt,
@@ -36,6 +40,8 @@ export function MediaImage({
   if (!src) return null
 
   if (isStableMediaRoute(src)) {
+    // /m 路由已是稳定可缓存资源，避免再走 next/image 优化链路触发重复回源。
+    const disableOptimization = shouldDisableNextImageOptimization(src)
     if (fill) {
       return (
         <Image
@@ -43,6 +49,7 @@ export function MediaImage({
           alt={alt}
           fill
           sizes={sizes || '100vw'}
+          unoptimized={disableOptimization}
           priority={priority}
           className={className}
           style={style}
@@ -59,6 +66,7 @@ export function MediaImage({
         width={width}
         height={height}
         sizes={sizes}
+        unoptimized={disableOptimization}
         priority={priority}
         className={className}
         style={style}

@@ -9,39 +9,83 @@ const NEWAPI_TIMEOUT_MS = Number.parseInt(
 )
 
 type NewApiAspectVariant = 'landscape' | 'portrait' | 'square' | 'four-three' | 'three-four'
+type NewApiImageResponseFormat = 'url' | 'b64_json'
+type NewApiVideoGenerationMode = 'normal' | 'firstlastframe'
 
-type NewApiMultimodalPart = {
-    type: 'text'
-    text: string
-} | {
-    type: 'image_url'
-    image_url: {
-        url: string
-    }
-}
-
-interface NewApiChatCompletionPayload {
+interface NewApiImagePayload {
     model: string
-    messages: Array<{
-        role: 'user'
-        content: string | NewApiMultimodalPart[]
-    }>
-    stream: boolean
+    prompt: string
+    size?: string
+    quality?: 'hd'
+    response_format?: NewApiImageResponseFormat
+    n?: number
 }
 
-interface NewApiChatCompletionResponse {
-    choices?: Array<{
-        message?: {
-            content?: string | null
-        }
-    }>
+interface NewApiImageItem {
+    url?: string | null
+    b64_json?: string | null
+}
+
+interface NewApiImageResponse {
+    data?: NewApiImageItem[]
     error?: {
         message?: string
     }
+    message?: string
+}
+
+interface NewApiVideoPayload {
+    model: string
+    prompt: string
+    image: string
+    size?: string
+    quality?: 'hd'
+    duration?: number
+    with_audio?: boolean
+    response_format?: 'url'
+}
+
+interface NewApiVideoResponse {
+    task_id?: string
+    id?: string
+    status?: string
+    data?: unknown
+    error?: {
+        message?: string
+    }
+    message?: string
+}
+
+interface NewApiVideoOptions {
+    modelId?: string
+    aspectRatio?: string
+    resolution?: string
+    duration?: number
+    generateAudio?: boolean
+    generationMode?: NewApiVideoGenerationMode
+    lastFrameImageUrl?: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function readTrimmedString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : ''
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
     return baseUrl.replace(/\/+$/, '')
+}
+
+function toAbsoluteUrlIfRelative(candidate: string, providerBaseUrl: string): string {
+    if (!candidate.startsWith('/')) return candidate
+    try {
+        const origin = new URL(providerBaseUrl).origin
+        return `${origin}${candidate}`
+    } catch {
+        return candidate
+    }
 }
 
 function resolveAspectVariant(
@@ -71,43 +115,38 @@ function resolveAspectVariant(
     return supported[0] || 'landscape'
 }
 
-function normalizeImageResolutionSuffix(resolution: string | undefined): string {
-    const normalized = (resolution || '').trim().toUpperCase()
-    if (normalized === '2K') return '-2k'
-    if (normalized === '4K') return '-4k'
-    return ''
+function resolveImageSize(input: {
+    size?: string
+    aspectRatio?: string
+}): string | undefined {
+    const directSize = readTrimmedString(input.size)
+    if (directSize) return directSize
+
+    const variant = resolveAspectVariant(input.aspectRatio, ['landscape', 'portrait', 'square', 'four-three', 'three-four'])
+    if (variant === 'portrait') return '1024x1792'
+    if (variant === 'square') return '1024x1024'
+    if (variant === 'four-three') return '1536x1152'
+    if (variant === 'three-four') return '1152x1536'
+    return '1792x1024'
 }
 
-function extractMarkdownImageUrl(content: string): string | null {
-    const markdownMatch = content.match(/!\[[^\]]*]\(([^)\s]+)\)/)
-    if (markdownMatch && markdownMatch[1]) {
-        return markdownMatch[1]
-    }
-    return null
+function resolveImageQuality(resolution: string | undefined): 'hd' | undefined {
+    const normalized = readTrimmedString(resolution).toUpperCase()
+    if (normalized === '2K' || normalized === '4K') return 'hd'
+    return undefined
 }
 
-function extractHtmlVideoUrl(content: string): string | null {
-    const htmlMatch = content.match(/<video[^>]*\bsrc=['"]([^'"]+)['"][^>]*>/i)
-    if (htmlMatch && htmlMatch[1]) {
-        return htmlMatch[1]
-    }
-    return null
+function resolveVideoQuality(resolution: string | undefined): 'hd' | undefined {
+    const normalized = readTrimmedString(resolution).toLowerCase()
+    if (normalized === '1080p' || normalized === '2k' || normalized === '4k') return 'hd'
+    return undefined
 }
 
-function extractPlainUrl(content: string): string | null {
-    const urlMatch = content.match(/https?:\/\/[^\s'"`)<]+/i)
-    if (urlMatch && urlMatch[0]) return urlMatch[0]
-    return null
-}
-
-function toAbsoluteUrlIfRelative(candidate: string, providerBaseUrl: string): string {
-    if (!candidate.startsWith('/')) return candidate
-    try {
-        const origin = new URL(providerBaseUrl).origin
-        return `${origin}${candidate}`
-    } catch {
-        return candidate
-    }
+function pickImageResponseFormat(outputFormat: string | undefined): NewApiImageResponseFormat | undefined {
+    const normalized = readTrimmedString(outputFormat).toLowerCase()
+    if (normalized === 'url') return 'url'
+    if (normalized === 'b64_json' || normalized === 'base64') return 'b64_json'
+    return undefined
 }
 
 async function normalizeImageInputToDataUrl(input: string): Promise<string | null> {
@@ -133,36 +172,114 @@ async function normalizeVideoImageToDataUrl(input: string): Promise<string> {
     return await imageUrlToBase64(normalized)
 }
 
-async function requestNewApiCompletion(input: {
+function dataUrlToBlob(dataUrl: string): Blob {
+    const matched = dataUrl.match(/^data:([^;,]+);base64,(.+)$/)
+    if (!matched) {
+        throw new Error('NEWAPI_IMAGE_DATAURL_INVALID')
+    }
+    const mimeType = matched[1]
+    const rawBase64 = matched[2]
+    const buffer = Buffer.from(rawBase64, 'base64')
+    return new Blob([buffer], { type: mimeType })
+}
+
+function extractResponseErrorMessage(payload: unknown): string | null {
+    if (!isRecord(payload)) return null
+    const error = payload.error
+    if (isRecord(error)) {
+        const message = readTrimmedString(error.message)
+        if (message) return message
+    }
+    const message = readTrimmedString(payload.message)
+    if (message) return message
+    return null
+}
+
+async function requestNewApiJson<T>(input: {
     baseUrl: string
     apiKey: string
-    payload: NewApiChatCompletionPayload
-}): Promise<string> {
-    const response = await fetch(`${normalizeBaseUrl(input.baseUrl)}/chat/completions`, {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${input.apiKey}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(input.payload),
+    path: string
+    method?: 'GET' | 'POST'
+    jsonBody?: unknown
+    formBody?: FormData
+}): Promise<T> {
+    const response = await fetch(`${normalizeBaseUrl(input.baseUrl)}${input.path}`, {
+        method: input.method || 'POST',
+        headers: input.formBody
+            ? {
+                Authorization: `Bearer ${input.apiKey}`,
+            }
+            : {
+                Authorization: `Bearer ${input.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+        body: input.formBody || (input.jsonBody !== undefined ? JSON.stringify(input.jsonBody) : undefined),
         signal: AbortSignal.timeout(NEWAPI_TIMEOUT_MS),
     })
 
+    const responseText = await response.text()
+    let parsed: unknown = {}
+    if (responseText.trim()) {
+        try {
+            parsed = JSON.parse(responseText)
+        } catch {
+            if (!response.ok) {
+                throw new Error(`NEWAPI_REQUEST_FAILED: ${response.status} ${responseText.slice(0, 200)}`)
+            }
+            throw new Error(`NEWAPI_RESPONSE_INVALID_JSON: ${responseText.slice(0, 200)}`)
+        }
+    }
+
+    const errorMessage = extractResponseErrorMessage(parsed)
     if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`NEWAPI_REQUEST_FAILED: ${response.status} ${errorText.slice(0, 200)}`)
+        if (errorMessage) {
+            throw new Error(`NEWAPI_REQUEST_FAILED: ${response.status} ${errorMessage}`)
+        }
+        throw new Error(`NEWAPI_REQUEST_FAILED: ${response.status} ${responseText.slice(0, 200)}`)
+    }
+    if (errorMessage) {
+        throw new Error(`NEWAPI_ERROR: ${errorMessage}`)
     }
 
-    const data = await response.json() as NewApiChatCompletionResponse
-    if (data.error?.message) {
-        throw new Error(`NEWAPI_ERROR: ${data.error.message}`)
+    return parsed as T
+}
+
+function extractImageResult(
+    response: NewApiImageResponse,
+    providerBaseUrl: string,
+): { imageUrl: string; imageBase64?: string } {
+    const items = Array.isArray(response.data) ? response.data : []
+    for (const item of items) {
+        const url = readTrimmedString(item?.url)
+        if (url) {
+            return { imageUrl: toAbsoluteUrlIfRelative(url, providerBaseUrl) }
+        }
+        const imageBase64 = readTrimmedString(item?.b64_json)
+        if (imageBase64) {
+            return {
+                imageUrl: `data:image/png;base64,${imageBase64}`,
+                imageBase64,
+            }
+        }
+    }
+    throw new Error('NEWAPI_IMAGE_DATA_MISSING')
+}
+
+function extractVideoTaskId(response: NewApiVideoResponse): string {
+    const directTaskId = readTrimmedString(response.task_id)
+    if (directTaskId) return directTaskId
+
+    const directId = readTrimmedString(response.id)
+    if (directId) return directId
+
+    if (isRecord(response.data)) {
+        const nestedTaskId = readTrimmedString(response.data.task_id)
+        if (nestedTaskId) return nestedTaskId
+        const nestedId = readTrimmedString(response.data.id)
+        if (nestedId) return nestedId
     }
 
-    const content = data.choices?.[0]?.message?.content
-    if (typeof content !== 'string' || !content.trim()) {
-        throw new Error('NEWAPI_EMPTY_RESPONSE')
-    }
-    return content
+    throw new Error('NEWAPI_VIDEO_TASK_ID_MISSING')
 }
 
 export class NewApiImageGenerator extends BaseImageGenerator {
@@ -197,51 +314,79 @@ export class NewApiImageGenerator extends BaseImageGenerator {
             }
         }
 
-        const modelId = typeof options.modelId === 'string' && options.modelId.trim()
-            ? options.modelId.trim()
-            : 'gpt-4o-image-preview'
-        const aspectRatio = typeof options.aspectRatio === 'string' ? options.aspectRatio : undefined
-        const resolution = typeof options.resolution === 'string' ? options.resolution : undefined
+        const modelId = readTrimmedString(options.modelId) || 'gpt-image-1'
+        const aspectRatio = readTrimmedString(options.aspectRatio) || undefined
+        const resolution = readTrimmedString(options.resolution) || undefined
+        const outputFormat = readTrimmedString(options.outputFormat) || undefined
+        const size = resolveImageSize({
+            size: readTrimmedString(options.size) || undefined,
+            aspectRatio,
+        })
+        const quality = resolveImageQuality(resolution)
+        const responseFormat = pickImageResponseFormat(outputFormat)
 
         const normalizedPrompt = prompt.trim()
         if (!normalizedPrompt) {
             throw new Error('NEWAPI_IMAGE_PROMPT_REQUIRED')
         }
 
-        const normalizedReferences = (await Promise.all(
-            referenceImages.slice(0, 14).map(async (item) => await normalizeImageInputToDataUrl(item)),
-        )).filter((item): item is string => typeof item === 'string' && item.length > 0)
-
-        const content: string | NewApiMultimodalPart[] = normalizedReferences.length === 0
-            ? normalizedPrompt
-            : [
-                { type: 'text', text: normalizedPrompt },
-                ...normalizedReferences.map((item) => ({
-                    type: 'image_url' as const,
-                    image_url: {
-                        url: item,
-                    },
-                })),
-            ]
-
-        const responseContent = await requestNewApiCompletion({
-            baseUrl: config.baseUrl,
-            apiKey: config.apiKey,
-            payload: {
-                model: modelId,
-                messages: [{ role: 'user', content }],
-                stream: false,
-            },
-        })
-
-        const imageUrl = extractMarkdownImageUrl(responseContent) || extractPlainUrl(responseContent)
-        if (!imageUrl) {
-            throw new Error('NEWAPI_IMAGE_URL_MISSING')
+        const basePayload: NewApiImagePayload = {
+            model: modelId,
+            prompt: normalizedPrompt,
+            ...(size ? { size } : {}),
+            ...(quality ? { quality } : {}),
+            ...(responseFormat ? { response_format: responseFormat } : {}),
+            n: 1,
         }
 
+        let responseData: NewApiImageResponse
+        if (referenceImages.length === 0) {
+            responseData = await requestNewApiJson<NewApiImageResponse>({
+                baseUrl: config.baseUrl,
+                apiKey: config.apiKey,
+                path: '/images/generations',
+                method: 'POST',
+                jsonBody: basePayload,
+            })
+        } else {
+            const normalizedReferences = (await Promise.all(
+                referenceImages.slice(0, 8).map(async (item) => await normalizeImageInputToDataUrl(item)),
+            )).filter((item): item is string => typeof item === 'string' && item.length > 0)
+
+            if (normalizedReferences.length === 0) {
+                throw new Error('NEWAPI_IMAGE_REFERENCE_REQUIRED')
+            }
+
+            const form = new FormData()
+            form.append('model', modelId)
+            form.append('prompt', normalizedPrompt)
+            if (size) form.append('size', size)
+            if (quality) form.append('quality', quality)
+            if (responseFormat) form.append('response_format', responseFormat)
+
+            const blobs = normalizedReferences.map((item) => dataUrlToBlob(item))
+            if (blobs.length === 1) {
+                form.append('image', blobs[0], 'reference-1.png')
+            } else {
+                blobs.forEach((blob, index) => {
+                    form.append('image[]', blob, `reference-${index + 1}.png`)
+                })
+            }
+
+            responseData = await requestNewApiJson<NewApiImageResponse>({
+                baseUrl: config.baseUrl,
+                apiKey: config.apiKey,
+                path: '/images/edits',
+                method: 'POST',
+                formBody: form,
+            })
+        }
+
+        const parsed = extractImageResult(responseData, config.baseUrl)
         return {
             success: true,
-            imageUrl: toAbsoluteUrlIfRelative(imageUrl, config.baseUrl),
+            imageUrl: parsed.imageUrl,
+            ...(parsed.imageBase64 ? { imageBase64: parsed.imageBase64 } : {}),
         }
     }
 }
@@ -281,58 +426,51 @@ export class NewApiVideoGenerator extends BaseVideoGenerator {
             }
         }
 
-        const typedOptions = options as {
-            modelId?: string
-            aspectRatio?: string
-            generationMode?: 'normal' | 'firstlastframe'
-            lastFrameImageUrl?: string
+        const typedOptions = options as NewApiVideoOptions
+        if (typedOptions.generationMode === 'firstlastframe') {
+            throw new Error('NEWAPI_VIDEO_OPTION_UNSUPPORTED: generationMode=firstlastframe')
         }
-        const modelId = typeof typedOptions.modelId === 'string' && typedOptions.modelId.trim()
-            ? typedOptions.modelId.trim()
-            : 'kling-video-generate'
-        const aspectRatio = typedOptions.aspectRatio
+        if (readTrimmedString(typedOptions.lastFrameImageUrl)) {
+            throw new Error('NEWAPI_VIDEO_OPTION_UNSUPPORTED: lastFrameImageUrl')
+        }
 
+        const modelId = readTrimmedString(typedOptions.modelId) || 'kling-v1'
         const promptText = prompt.trim() || 'Generate a cinematic video.'
-
         const firstFrame = await normalizeVideoImageToDataUrl(imageUrl)
-        const images: string[] = [firstFrame]
+        const size = resolveImageSize({
+            aspectRatio: readTrimmedString(typedOptions.aspectRatio) || undefined,
+        })
+        const quality = resolveVideoQuality(readTrimmedString(typedOptions.resolution) || undefined)
 
-        if (
-            typedOptions.generationMode === 'firstlastframe'
-            && typeof typedOptions.lastFrameImageUrl === 'string'
-            && typedOptions.lastFrameImageUrl.trim()
-        ) {
-            images.push(await normalizeVideoImageToDataUrl(typedOptions.lastFrameImageUrl))
+        const payload: NewApiVideoPayload = {
+            model: modelId,
+            prompt: promptText,
+            image: firstFrame,
+            response_format: 'url',
+            ...(size ? { size } : {}),
+            ...(quality ? { quality } : {}),
+            ...(typeof typedOptions.duration === 'number' && Number.isFinite(typedOptions.duration) && typedOptions.duration > 0
+                ? { duration: typedOptions.duration }
+                : {}),
+            ...(typeof typedOptions.generateAudio === 'boolean'
+                ? { with_audio: typedOptions.generateAudio }
+                : {}),
         }
 
-        const content: NewApiMultimodalPart[] = [
-            { type: 'text', text: promptText },
-            ...images.map((item) => ({
-                type: 'image_url' as const,
-                image_url: {
-                    url: item,
-                },
-            })),
-        ]
-
-        const responseContent = await requestNewApiCompletion({
+        const response = await requestNewApiJson<NewApiVideoResponse>({
             baseUrl: config.baseUrl,
             apiKey: config.apiKey,
-            payload: {
-                model: modelId,
-                messages: [{ role: 'user', content }],
-                stream: false,
-            },
+            path: '/video/generations',
+            method: 'POST',
+            jsonBody: payload,
         })
 
-        const videoUrl = extractHtmlVideoUrl(responseContent) || extractPlainUrl(responseContent)
-        if (!videoUrl) {
-            throw new Error('NEWAPI_VIDEO_URL_MISSING')
-        }
-
+        const taskId = extractVideoTaskId(response)
         return {
             success: true,
-            videoUrl: toAbsoluteUrlIfRelative(videoUrl, config.baseUrl),
+            async: true,
+            requestId: taskId,
+            externalId: `NEWAPI:VIDEO:${taskId}`,
         }
     }
 }

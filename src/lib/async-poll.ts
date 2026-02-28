@@ -40,7 +40,7 @@ function getErrorMessage(error: unknown): string {
  * 解析 externalId 获取 provider、type 和请求信息
  */
 export function parseExternalId(externalId: string): {
-    provider: 'FAL' | 'ARK' | 'GEMINI' | 'GOOGLE' | 'MINIMAX' | 'VIDU' | 'UNKNOWN'
+    provider: 'FAL' | 'ARK' | 'GEMINI' | 'GOOGLE' | 'MINIMAX' | 'VIDU' | 'NEWAPI' | 'UNKNOWN'
     type: 'VIDEO' | 'IMAGE' | 'BATCH' | 'UNKNOWN'
     endpoint?: string
     requestId: string
@@ -138,9 +138,23 @@ export function parseExternalId(externalId: string): {
         }
     }
 
+    if (externalId.startsWith('NEWAPI:')) {
+        const parts = externalId.split(':')
+        const type = parts[1]
+        const requestId = parts.slice(2).join(':')
+        if (type !== 'VIDEO' || !requestId) {
+            throw new Error(`无效 NEWAPI externalId: "${externalId}"，应为 NEWAPI:VIDEO:taskId`)
+        }
+        return {
+            provider: 'NEWAPI',
+            type: 'VIDEO',
+            requestId,
+        }
+    }
+
     throw new Error(
         `无法识别的 externalId 格式: "${externalId}". ` +
-        `支持的格式: FAL:TYPE:endpoint:requestId, ARK:TYPE:requestId, GEMINI:BATCH:batchName, GOOGLE:VIDEO:operationName, MINIMAX:TYPE:taskId, VIDU:TYPE:taskId`
+        `支持的格式: FAL:TYPE:endpoint:requestId, ARK:TYPE:requestId, GEMINI:BATCH:batchName, GOOGLE:VIDEO:operationName, MINIMAX:TYPE:taskId, VIDU:TYPE:taskId, NEWAPI:VIDEO:taskId`
     )
 }
 
@@ -172,6 +186,8 @@ export async function pollAsyncTask(
             return await pollMinimaxTask(parsed.requestId, userId)
         case 'VIDU':
             return await pollViduTask(parsed.requestId, userId)
+        case 'NEWAPI':
+            return await pollNewApiVideoTask(parsed.requestId, userId)
         default:
             // 🔥 移除 fallback：未知 provider 直接抛出错误
             throw new Error(`未知的 Provider: ${parsed.provider}`)
@@ -493,13 +509,172 @@ async function queryViduTaskStatus(
     }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function readTrimmedString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : ''
+}
+
+function toAbsoluteUrlIfRelative(candidate: string, providerBaseUrl: string): string {
+    if (!candidate.startsWith('/')) return candidate
+    try {
+        const origin = new URL(providerBaseUrl).origin
+        return `${origin}${candidate}`
+    } catch {
+        return candidate
+    }
+}
+
+function normalizeNewApiTaskStatus(rawStatus: string): 'pending' | 'completed' | 'failed' {
+    const status = rawStatus.toLowerCase()
+    if (
+        status.includes('success')
+        || status.includes('succeed')
+        || status.includes('complete')
+        || status.includes('done')
+        || status.includes('finish')
+    ) {
+        return 'completed'
+    }
+    if (status.includes('fail') || status.includes('error') || status.includes('cancel')) {
+        return 'failed'
+    }
+    return 'pending'
+}
+
+function extractNewApiTaskInfo(payload: unknown): {
+    status: 'pending' | 'completed' | 'failed'
+    videoUrl?: string
+    error?: string
+} {
+    const root = isRecord(payload) ? payload : {}
+    const nested = isRecord(root.data) ? root.data : {}
+
+    const statusRaw = readTrimmedString(root.status) || readTrimmedString(nested.status) || 'pending'
+    const status = normalizeNewApiTaskStatus(statusRaw)
+
+    const directUrl = readTrimmedString(root.video_url)
+        || readTrimmedString(root.videoUrl)
+        || readTrimmedString(root.url)
+        || readTrimmedString(root.result_url)
+        || readTrimmedString(root.resultUrl)
+        || readTrimmedString(root.download_url)
+    const nestedUrl = readTrimmedString(nested.video_url)
+        || readTrimmedString(nested.videoUrl)
+        || readTrimmedString(nested.url)
+        || readTrimmedString(nested.result_url)
+        || readTrimmedString(nested.resultUrl)
+        || readTrimmedString(nested.download_url)
+    const listUrl = Array.isArray(root.data) && root.data.length > 0 && isRecord(root.data[0])
+        ? readTrimmedString(root.data[0].url)
+        : ''
+    const videoUrl = directUrl || nestedUrl || listUrl || undefined
+
+    if (status === 'completed' && !videoUrl) {
+        return {
+            status: 'failed',
+            error: 'NEWAPI task completed but video url missing',
+        }
+    }
+
+    const errorMessage = (() => {
+        if (isRecord(root.error)) {
+            const fromError = readTrimmedString(root.error.message)
+            if (fromError) return fromError
+        }
+        if (isRecord(nested.error)) {
+            const fromNested = readTrimmedString(nested.error.message)
+            if (fromNested) return fromNested
+        }
+        const direct = readTrimmedString(root.message) || readTrimmedString(nested.message)
+        return direct || undefined
+    })()
+
+    return {
+        status,
+        ...(videoUrl ? { videoUrl } : {}),
+        ...(status === 'failed' && errorMessage ? { error: errorMessage } : {}),
+    }
+}
+
+async function queryNewApiVideoTaskStatus(
+    taskId: string,
+    apiKey: string,
+    baseUrl: string,
+): Promise<{ status: 'pending' | 'completed' | 'failed'; videoUrl?: string; error?: string }> {
+    const endpoint = `${baseUrl.replace(/\/+$/, '')}/video/generations/${encodeURIComponent(taskId)}`
+    try {
+        const response = await fetch(endpoint, {
+            method: 'GET',
+            headers: {
+                Authorization: `Bearer ${apiKey}`,
+            },
+        })
+        const rawText = await response.text()
+        let payload: unknown = {}
+        if (rawText.trim()) {
+            try {
+                payload = JSON.parse(rawText)
+            } catch {
+                if (!response.ok) {
+                    return {
+                        status: 'failed',
+                        error: `NEWAPI: HTTP ${response.status} ${rawText.slice(0, 200)}`,
+                    }
+                }
+                return {
+                    status: 'failed',
+                    error: `NEWAPI: invalid JSON response ${rawText.slice(0, 200)}`,
+                }
+            }
+        }
+
+        if (!response.ok) {
+            const parsed = extractNewApiTaskInfo(payload)
+            return {
+                status: 'failed',
+                error: parsed.error || `NEWAPI: HTTP ${response.status}`,
+            }
+        }
+
+        return extractNewApiTaskInfo(payload)
+    } catch (error: unknown) {
+        return {
+            status: 'failed',
+            error: `NEWAPI: ${getErrorMessage(error)}`,
+        }
+    }
+}
+
+/**
+ * NEW API 视频任务轮询
+ */
+async function pollNewApiVideoTask(
+    taskId: string,
+    userId: string,
+): Promise<PollResult> {
+    const providerConfig = await getProviderConfig(userId, 'newapi')
+    if (!providerConfig.baseUrl) {
+        throw new Error('PROVIDER_BASE_URL_MISSING: newapi')
+    }
+    const result = await queryNewApiVideoTaskStatus(taskId, providerConfig.apiKey, providerConfig.baseUrl)
+    return {
+        status: result.status,
+        videoUrl: result.videoUrl ? toAbsoluteUrlIfRelative(result.videoUrl, providerConfig.baseUrl) : undefined,
+        resultUrl: result.videoUrl ? toAbsoluteUrlIfRelative(result.videoUrl, providerConfig.baseUrl) : undefined,
+        error: result.error,
+    }
+}
+
 // ==================== 格式化辅助函数 ====================
 
 /**
  * 创建标准格式的 externalId
  */
 export function formatExternalId(
-    provider: 'FAL' | 'ARK' | 'GEMINI' | 'GOOGLE' | 'MINIMAX' | 'VIDU',
+    provider: 'FAL' | 'ARK' | 'GEMINI' | 'GOOGLE' | 'MINIMAX' | 'VIDU' | 'NEWAPI',
     type: 'VIDEO' | 'IMAGE' | 'BATCH',
     requestId: string,
     endpoint?: string

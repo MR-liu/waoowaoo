@@ -85,6 +85,7 @@ function parsePricingDisplayMap(raw: unknown): PricingDisplayMap {
 const PRICING_DISPLAY_ALIASES: Readonly<Record<string, string>> = {
     'gemini-compatible': 'google',
     flow2api: 'google',
+    newapi: 'google',
 }
 
 function resolvePricingDisplay(

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AppIcon } from '@/components/ui/icons'
 import { getProviderKey, isPresetComingSoonModel, type CustomModel } from '../types'
 import type { UseProviderCardStateResult } from './hooks/useProviderCardState'
+import { getAddableModelTypes, getDefaultAddModelType, getVisibleModelTypes } from './model-type'
 import type {
   ProviderCardModelType,
   ProviderCardProps,
@@ -59,8 +60,6 @@ const typeLabel = (type: ProviderCardModelType, t: ProviderCardTranslator) => {
   }
 }
 
-const MODEL_TYPES: readonly ProviderCardModelType[] = ['llm', 'image', 'video', 'audio']
-
 function formatPriceAmount(amount: number): string {
   const fixed = amount.toFixed(4)
   const normalized = fixed.replace(/\.?0+$/, '')
@@ -100,62 +99,61 @@ export function ProviderAdvancedFields({
   state,
 }: ProviderAdvancedFieldsProps) {
   const providerKey = getProviderKey(provider.id)
-  const addableModelTypes = new Set<ProviderCardModelType>(
-    providerKey === 'openai-compatible'
-      ? ['llm']
-      : ['llm', 'image', 'video', 'audio'],
+  const addableModelTypeList = useMemo(() => getAddableModelTypes(providerKey), [providerKey])
+  const addableModelTypes = useMemo(
+    () => new Set<ProviderCardModelType>(addableModelTypeList),
+    [addableModelTypeList],
   )
-  const typesWithModels = useMemo(
-    () =>
-      MODEL_TYPES.filter((type) => {
-        const modelsOfType = state.groupedModels[type]
-        return Array.isArray(modelsOfType) && modelsOfType.length > 0
-      }),
-    [state.groupedModels],
+  const visibleTypes = useMemo(
+    () => getVisibleModelTypes(state.groupedModels, addableModelTypeList),
+    [addableModelTypeList, state.groupedModels],
   )
   const [activeType, setActiveType] = useState<ProviderCardModelType | null>(
-    typesWithModels[0] ?? null,
+    visibleTypes[0] ?? null,
   )
-  const activeTypeSignature = typesWithModels.join('|')
+  const activeTypeSignature = visibleTypes.join('|')
 
   useEffect(() => {
-    if (typesWithModels.length === 0) {
+    if (visibleTypes.length === 0) {
       setActiveType(null)
       return
     }
-    if (!activeType || !typesWithModels.includes(activeType)) {
-      setActiveType(typesWithModels[0])
+    if (!activeType || !visibleTypes.includes(activeType)) {
+      setActiveType(visibleTypes[0])
     }
-  }, [activeType, activeTypeSignature, typesWithModels])
+  }, [activeType, activeTypeSignature, visibleTypes])
 
-  const currentType = activeType ?? typesWithModels[0] ?? null
+  const currentType = activeType ?? visibleTypes[0] ?? null
   const currentModels = currentType ? (state.groupedModels[currentType] ?? []) : []
   const shouldShowAddButton =
     !!currentType
     && addableModelTypes.has(currentType)
     && state.showAddForm !== currentType
-  const defaultAddType: ProviderCardModelType = (
-    providerKey === 'openrouter' || providerKey === 'openai-compatible'
-  ) ? 'llm' : 'image'
+  const defaultAddType = getDefaultAddModelType(providerKey)
+  const noModelAddType = (
+    state.showAddForm && addableModelTypes.has(state.showAddForm)
+      ? state.showAddForm
+      : null
+  )
 
   return state.hasModels ? (
     <div className="space-y-2.5 p-3">
       <div className="rounded-lg p-0.5" style={{ background: 'rgba(0,0,0,0.04)' }}>
         <div
           className="relative grid gap-1"
-          style={{ gridTemplateColumns: `repeat(${Math.max(1, typesWithModels.length)}, minmax(0, 1fr))` }}
+          style={{ gridTemplateColumns: `repeat(${Math.max(1, visibleTypes.length)}, minmax(0, 1fr))` }}
         >
-          {typesWithModels.length > 0 && currentType && (
+          {visibleTypes.length > 0 && currentType && (
             <div
               className="absolute bottom-0.5 top-0.5 rounded-md bg-white transition-transform duration-200"
               style={{
                 boxShadow: '0 1px 4px rgba(0,0,0,0.15), 0 0 0 0.5px rgba(0,0,0,0.06)',
-                width: `calc(100% / ${typesWithModels.length})`,
-                transform: `translateX(${Math.max(0, typesWithModels.indexOf(currentType)) * 100}%)`,
+                width: `calc(100% / ${visibleTypes.length})`,
+                transform: `translateX(${Math.max(0, visibleTypes.indexOf(currentType)) * 100}%)`,
               }}
             />
           )}
-          {typesWithModels.map((type) => (
+          {visibleTypes.map((type) => (
             <button
               key={type}
               onClick={() => setActiveType(type)}
@@ -313,6 +311,25 @@ export function ProviderAdvancedFields({
         </div>
       ) : (
         <div className="glass-surface-soft rounded-xl p-3">
+          {addableModelTypeList.length > 1 && (
+            <div className="mb-2.5 rounded-lg p-0.5" style={{ background: 'rgba(0,0,0,0.04)' }}>
+              <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${addableModelTypeList.length}, minmax(0, 1fr))` }}>
+                {addableModelTypeList.map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => state.setShowAddForm(type)}
+                    className={`flex items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${noModelAddType === type
+                      ? 'bg-white text-[var(--glass-text-primary)] shadow-[0_1px_4px_rgba(0,0,0,0.12)]'
+                      : 'text-[var(--glass-text-tertiary)] hover:text-[var(--glass-text-secondary)]'
+                      }`}
+                  >
+                    <TypeIcon type={type} className="h-3 w-3" />
+                    <span>{typeLabel(type, t)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="mb-2.5 flex items-center gap-2">
             <input
               type="text"
@@ -339,13 +356,13 @@ export function ProviderAdvancedFields({
               className="glass-input-base flex-1 px-3 py-1.5 text-[12px] font-mono"
             />
             <button
-              onClick={() => state.showAddForm && state.handleAddModel(state.showAddForm)}
+              onClick={() => noModelAddType && state.handleAddModel(noModelAddType)}
               className="glass-btn-base glass-btn-primary px-3 py-1.5 text-[12px] font-medium"
             >
               {t('save')}
             </button>
           </div>
-          {state.needsCustomPricing && state.showAddForm && (
+          {state.needsCustomPricing && noModelAddType && (
             <div className="mt-2 flex items-center gap-2">
               <input
                 type="number"
