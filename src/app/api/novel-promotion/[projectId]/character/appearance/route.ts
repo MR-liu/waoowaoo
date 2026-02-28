@@ -1,4 +1,4 @@
-import { logInfo as _ulogInfo, logWarn as _ulogWarn } from '@/lib/logging/core'
+import { logInfo as _ulogInfo } from '@/lib/logging/core'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { deleteCOSObject } from '@/lib/cos'
@@ -7,6 +7,7 @@ import { decodeDescriptionsStrict, DescriptionsContractError } from '@/lib/contr
 import { resolveStorageKeyFromMediaValue } from '@/lib/media/service'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { runSideEffectWithWarning, type SideEffectWarning } from '@/lib/api/side-effect-warning'
 
 /**
  * POST - 为现有角色添加子形象
@@ -203,38 +204,60 @@ export const DELETE = apiHandler(async (
 
   // 删除 COS 中的图片
   const deletedImages: string[] = []
+  const cleanupWarnings: SideEffectWarning[] = []
 
   // 删除主图片
   if (appearance.imageUrl) {
     const key = await resolveStorageKeyFromMediaValue(appearance.imageUrl)
     if (key) {
-      try {
-        await deleteCOSObject(key)
+      const warning = await runSideEffectWithWarning({
+        code: 'CHARACTER_APPEARANCE_DELETE_COS_FAILED',
+        target: `characterAppearance:${appearance.id}:imageUrl`,
+        logPrefix: '[Character Appearance DELETE] 删除主图失败',
+        run: async () => {
+          await deleteCOSObject(key)
+        },
+      })
+      if (!warning) {
         deletedImages.push(key)
-      } catch {
-        _ulogWarn('Failed to delete COS image:', key)
+      } else {
+        cleanupWarnings.push(warning)
       }
     }
   }
 
   // 删除图片数组中的所有图片
-  try {
-    const urls = decodeImageUrlsFromDb(appearance.imageUrls, 'characterAppearance.imageUrls')
-    for (const url of urls) {
-      if (url) {
-        const key = await resolveStorageKeyFromMediaValue(url)
-        if (key && !deletedImages.includes(key)) {
-          try {
+  let urls: string[] = []
+  const decodeWarning = await runSideEffectWithWarning({
+    code: 'CHARACTER_APPEARANCE_IMAGE_URLS_PARSE_FAILED',
+    target: `characterAppearance:${appearance.id}:imageUrls`,
+    logPrefix: '[Character Appearance DELETE] imageUrls 解析失败',
+    run: async () => {
+      urls = decodeImageUrlsFromDb(appearance.imageUrls, 'characterAppearance.imageUrls')
+    },
+  })
+  if (decodeWarning) {
+    cleanupWarnings.push(decodeWarning)
+  } else {
+    for (const [index, url] of urls.entries()) {
+      if (!url) continue
+      const key = await resolveStorageKeyFromMediaValue(url)
+      if (key && !deletedImages.includes(key)) {
+        const warning = await runSideEffectWithWarning({
+          code: 'CHARACTER_APPEARANCE_DELETE_COS_FAILED',
+          target: `characterAppearance:${appearance.id}:imageUrls:${index}`,
+          logPrefix: '[Character Appearance DELETE] 删除候选图失败',
+          run: async () => {
             await deleteCOSObject(key)
-            deletedImages.push(key)
-          } catch {
-            _ulogWarn('Failed to delete COS image:', key)
-          }
+          },
+        })
+        if (!warning) {
+          deletedImages.push(key)
+        } else {
+          cleanupWarnings.push(warning)
         }
       }
     }
-  } catch {
-    // contract violation is surfaced by migration/validation scripts; keep delete idempotent
   }
 
   // 删除数据库记录
@@ -262,6 +285,8 @@ export const DELETE = apiHandler(async (
 
   return NextResponse.json({
     success: true,
-    deletedImages: deletedImages.length
+    deletedImages: deletedImages.length,
+    cleanupWarningCount: cleanupWarnings.length,
+    cleanupWarnings,
   })
 })

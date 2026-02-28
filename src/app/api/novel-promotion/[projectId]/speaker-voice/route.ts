@@ -4,32 +4,12 @@ import { getSignedUrl } from '@/lib/cos'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
 import { resolveStorageKeyFromMediaValue } from '@/lib/media/service'
-import { logWarn } from '@/lib/logging/core'
 import { readRequestJsonObject } from '@/lib/request-json'
-
-interface SpeakerVoiceConfig {
-  voiceType?: string
-  voiceId?: string
-  audioUrl: string
-}
-
-function parseSpeakerVoices(
-  raw: string | null | undefined,
-  context: string,
-): Record<string, SpeakerVoiceConfig> {
-  if (!raw) return {}
-  try {
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('speakerVoices must be a JSON object')
-    }
-    return parsed as Record<string, SpeakerVoiceConfig>
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    logWarn(`[Speaker Voice] speakerVoices JSON parse failed context=${context} error=${message}`)
-    return {}
-  }
-}
+import {
+  decodeSpeakerVoicesFromDb,
+  SpeakerVoicesContractError,
+  type SpeakerVoiceConfig,
+} from '@/lib/contracts/speaker-voices-contract'
 
 /**
  * GET /api/novel-promotion/[projectId]/speaker-voice?episodeId=xxx
@@ -60,8 +40,19 @@ export const GET = apiHandler(async (
     throw new ApiError('NOT_FOUND')
   }
 
-  // 解析发言人音色
-  const speakerVoices = parseSpeakerVoices(episode.speakerVoices, `get episodeId=${episodeId}`)
+  // 解析发言人音色（严格契约，禁止静默回退掩盖脏数据）
+  let speakerVoices: Record<string, SpeakerVoiceConfig>
+  try {
+    speakerVoices = decodeSpeakerVoicesFromDb(episode.speakerVoices, 'novelPromotionEpisode.speakerVoices')
+  } catch (error: unknown) {
+    if (error instanceof SpeakerVoicesContractError) {
+      throw new ApiError('INTERNAL_ERROR', {
+        message: `speaker voices contract invalid: ${error.message}`,
+        episodeId,
+      })
+    }
+    throw error
+  }
   // 为音频URL生成签名
   for (const speaker of Object.keys(speakerVoices)) {
     const config = speakerVoices[speaker]
@@ -121,8 +112,19 @@ export const PATCH = apiHandler(async (
     throw new ApiError('NOT_FOUND')
   }
 
-  // 解析现有 speakerVoices，合并新条目
-  const speakerVoices = parseSpeakerVoices(episode.speakerVoices, `patch episodeId=${episodeId}`)
+  // 解析现有 speakerVoices，合并新条目（严格契约）
+  let speakerVoices: Record<string, SpeakerVoiceConfig>
+  try {
+    speakerVoices = decodeSpeakerVoicesFromDb(episode.speakerVoices, 'novelPromotionEpisode.speakerVoices')
+  } catch (error: unknown) {
+    if (error instanceof SpeakerVoicesContractError) {
+      throw new ApiError('INTERNAL_ERROR', {
+        message: `speaker voices contract invalid: ${error.message}`,
+        episodeId,
+      })
+    }
+    throw error
+  }
 
   // 将前端传来的 audioUrl（可能是 /m/m_xxx 媒体路由）还原为原始 storageKey
   // 保证与资产库角色的 customVoiceUrl 格式一致，Worker 端能正确处理
