@@ -31,9 +31,11 @@ interface Flow2ApiChatCompletionPayload {
 interface Flow2ApiVideoOptions {
     modelId?: string
     aspectRatio?: string
-    generationMode?: 'normal' | 'firstlastframe'
+    generationMode?: Flow2ApiVideoGenerationMode
     lastFrameImageUrl?: string
 }
+
+type Flow2ApiVideoGenerationMode = 'normal' | 'firstlastframe'
 
 function normalizeBaseUrl(baseUrl: string): string {
     return baseUrl.replace(/\/+$/, '')
@@ -119,6 +121,7 @@ function resolveFlow2ApiImageModel(
 function resolveFlow2ApiVideoModel(
     modelId: string,
     aspectRatio: string | undefined,
+    generationMode: Flow2ApiVideoGenerationMode,
 ): string {
     if (modelId.startsWith('veo_')) {
         return modelId
@@ -126,16 +129,20 @@ function resolveFlow2ApiVideoModel(
 
     const isPortrait = resolveAspectVariant(aspectRatio, ['landscape', 'portrait']) === 'portrait'
 
-    if (modelId === 'veo-3.1-fast-generate-preview' || modelId === 'veo-3.0-fast-generate-001') {
+    if (
+        modelId === 'veo-3.1-fast-generate-preview'
+        || modelId === 'veo-3.0-fast-generate-001'
+        || modelId === 'veo-3.1-generate-preview'
+        || modelId === 'veo-3.0-generate-001'
+    ) {
+        if (generationMode === 'firstlastframe') {
+            return isPortrait
+                ? 'veo_3_1_i2v_s_fast_portrait_fl'
+                : 'veo_3_1_i2v_s_fast_fl'
+        }
         return isPortrait
-            ? 'veo_3_1_i2v_s_fast_portrait_fl'
-            : 'veo_3_1_i2v_s_fast_fl'
-    }
-
-    if (modelId === 'veo-3.1-generate-preview' || modelId === 'veo-3.0-generate-001') {
-        return isPortrait
-            ? 'veo_3_1_i2v_s_portrait'
-            : 'veo_3_1_i2v_s_landscape'
+            ? 'veo_3_1_i2v_s_fast_portrait_ultra_relaxed'
+            : 'veo_3_1_i2v_s_fast_ultra_relaxed'
     }
 
     if (modelId === 'veo-2.0-generate-001') {
@@ -145,6 +152,10 @@ function resolveFlow2ApiVideoModel(
     }
 
     return modelId
+}
+
+function readTrimmedString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : ''
 }
 
 function extractMarkdownImageUrl(content: string): string | null {
@@ -397,19 +408,35 @@ export class Flow2ApiVideoGenerator extends BaseVideoGenerator {
         const modelId = typeof typedOptions.modelId === 'string' && typedOptions.modelId.trim()
             ? typedOptions.modelId.trim()
             : 'veo-3.1-fast-generate-preview'
-        const requestModel = resolveFlow2ApiVideoModel(modelId, typedOptions.aspectRatio)
+        const requestedGenerationMode = readTrimmedString(typedOptions.generationMode)
+        let normalizedGenerationMode: Flow2ApiVideoGenerationMode | undefined
+        if (requestedGenerationMode) {
+            if (requestedGenerationMode !== 'normal' && requestedGenerationMode !== 'firstlastframe') {
+                throw new Error(`FLOW2API_VIDEO_OPTION_VALUE_UNSUPPORTED: generationMode=${requestedGenerationMode}`)
+            }
+            normalizedGenerationMode = requestedGenerationMode
+        }
+        const normalizedLastFrameImageUrl = readTrimmedString(typedOptions.lastFrameImageUrl)
+        const inferredGenerationMode: Flow2ApiVideoGenerationMode = normalizedLastFrameImageUrl
+            ? 'firstlastframe'
+            : 'normal'
+        const generationMode = normalizedGenerationMode || inferredGenerationMode
+        if (normalizedGenerationMode === 'firstlastframe' && !normalizedLastFrameImageUrl) {
+            throw new Error('FLOW2API_VIDEO_OPTION_REQUIRED: lastFrameImageUrl')
+        }
+        if (normalizedGenerationMode === 'normal' && normalizedLastFrameImageUrl) {
+            throw new Error('FLOW2API_VIDEO_OPTION_UNSUPPORTED: lastFrameImageUrl for normal mode')
+        }
+
+        const requestModel = resolveFlow2ApiVideoModel(modelId, typedOptions.aspectRatio, generationMode)
 
         const promptText = prompt.trim() || 'Generate a cinematic video.'
 
         const firstFrame = await normalizeVideoImageToDataUrl(imageUrl)
         const images: string[] = [firstFrame]
 
-        if (
-            typedOptions.generationMode === 'firstlastframe'
-            && typeof typedOptions.lastFrameImageUrl === 'string'
-            && typedOptions.lastFrameImageUrl.trim()
-        ) {
-            images.push(await normalizeVideoImageToDataUrl(typedOptions.lastFrameImageUrl))
+        if (generationMode === 'firstlastframe' && normalizedLastFrameImageUrl) {
+            images.push(await normalizeVideoImageToDataUrl(normalizedLastFrameImageUrl))
         }
 
         const content: Flow2ApiMultimodalPart[] = [

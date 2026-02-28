@@ -113,7 +113,7 @@ export default function VideoRenderPanel({
   return (
     <>
       <div className={`grid gap-4 ${getAspectRatioConfig(videoRatio).isVertical
-        ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+        ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4'
         : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
       }`}>
         {allPanels.map((panel, idx) => {

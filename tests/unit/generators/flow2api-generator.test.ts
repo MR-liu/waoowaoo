@@ -41,6 +41,12 @@ function parseCompletionBody(init: RequestInit | undefined): CompletionBody {
   return JSON.parse(body) as CompletionBody
 }
 
+function buildSseResponse(parts: Array<Record<string, unknown>>): Response {
+  const lines = parts.map((part) => `data: ${JSON.stringify(part)}`)
+  lines.push('data: [DONE]')
+  return new Response(`${lines.join('\n')}\n`, { status: 200 })
+}
+
 describe('Flow2Api generators', () => {
   const fetchMock = vi.fn<typeof fetch>()
 
@@ -55,15 +61,18 @@ describe('Flow2Api generators', () => {
   })
 
   it('maps image model and parses markdown image url', async () => {
-    fetchMock.mockResolvedValue(new Response(JSON.stringify({
-      choices: [
-        {
-          message: {
-            content: '![Generated Image](https://cdn.flow2api.dev/out/image-1.png)',
+    fetchMock.mockResolvedValue(buildSseResponse([
+      {
+        id: 'chatcmpl-image',
+        choices: [
+          {
+            delta: {
+              content: '![Generated Image](https://cdn.flow2api.dev/out/image-1.png)',
+            },
           },
-        },
-      ],
-    }), { status: 200 }))
+        ],
+      },
+    ]))
 
     const generator = new Flow2ApiImageGenerator('flow2api')
     const result = await generator.generate({
@@ -84,19 +93,65 @@ describe('Flow2Api generators', () => {
     expect(requestUrl).toBe('http://localhost:8000/v1/chat/completions')
     const payload = parseCompletionBody(requestInit)
     expect(payload.model).toBe('gemini-3.1-flash-image-square-2k')
-    expect(payload.stream).toBe(false)
+    expect(payload.stream).toBe(true)
   })
 
-  it('maps video model in firstlastframe mode and parses html video url', async () => {
-    fetchMock.mockResolvedValue(new Response(JSON.stringify({
-      choices: [
-        {
-          message: {
-            content: "```html\n<video src='https://cdn.flow2api.dev/out/video-1.mp4' controls></video>\n```",
+  it('maps video model in normal mode and parses html video url', async () => {
+    fetchMock.mockResolvedValue(buildSseResponse([
+      {
+        id: 'chatcmpl-video',
+        choices: [
+          {
+            delta: {
+              content: "```html\n<video src='https://cdn.flow2api.dev/out/video-1.mp4' controls></video>\n```",
+            },
           },
-        },
-      ],
-    }), { status: 200 }))
+        ],
+      },
+    ]))
+
+    const generator = new Flow2ApiVideoGenerator('flow2api')
+    const result = await generator.generate({
+      userId: 'user-1',
+      imageUrl: 'data:image/png;base64,Zmlyc3QtZnJhbWU=',
+      prompt: '让角色转身',
+      options: {
+        modelId: 'veo-3.1-generate-preview',
+        aspectRatio: '16:9',
+      },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.videoUrl).toBe('https://cdn.flow2api.dev/out/video-1.mp4')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const payload = parseCompletionBody(requestInit)
+    expect(payload.model).toBe('veo_3_1_i2v_s_fast_ultra_relaxed')
+    expect(payload.stream).toBe(true)
+
+    const content = payload.messages[0]?.content
+    expect(Array.isArray(content)).toBe(true)
+    if (!Array.isArray(content)) {
+      throw new Error('content should be multimodal array')
+    }
+    const imageParts = content.filter((entry) => entry.type === 'image_url')
+    expect(imageParts).toHaveLength(1)
+  })
+
+  it('maps video model in firstlastframe mode and includes last frame image', async () => {
+    fetchMock.mockResolvedValue(buildSseResponse([
+      {
+        id: 'chatcmpl-video',
+        choices: [
+          {
+            delta: {
+              content: "```html\n<video src='https://cdn.flow2api.dev/out/video-1.mp4' controls></video>\n```",
+            },
+          },
+        ],
+      },
+    ]))
 
     const generator = new Flow2ApiVideoGenerator('flow2api')
     const result = await generator.generate({
@@ -118,7 +173,7 @@ describe('Flow2Api generators', () => {
     const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
     const payload = parseCompletionBody(requestInit)
     expect(payload.model).toBe('veo_3_1_i2v_s_fast_portrait_fl')
-    expect(payload.stream).toBe(false)
+    expect(payload.stream).toBe(true)
 
     const content = payload.messages[0]?.content
     expect(Array.isArray(content)).toBe(true)
@@ -127,5 +182,62 @@ describe('Flow2Api generators', () => {
     }
     const imageParts = content.filter((entry) => entry.type === 'image_url')
     expect(imageParts).toHaveLength(2)
+  })
+
+  it('infers firstlastframe mode from lastFrameImageUrl when generationMode is omitted', async () => {
+    fetchMock.mockResolvedValue(buildSseResponse([
+      {
+        id: 'chatcmpl-video',
+        choices: [
+          {
+            delta: {
+              content: "```html\n<video src='https://cdn.flow2api.dev/out/video-2.mp4' controls></video>\n```",
+            },
+          },
+        ],
+      },
+    ]))
+
+    const generator = new Flow2ApiVideoGenerator('flow2api')
+    const result = await generator.generate({
+      userId: 'user-1',
+      imageUrl: 'data:image/png;base64,Zmlyc3QtZnJhbWU=',
+      prompt: '让角色转身',
+      options: {
+        modelId: 'veo-3.1-fast-generate-preview',
+        aspectRatio: '16:9',
+        lastFrameImageUrl: 'data:image/png;base64,bGFzdC1mcmFtZQ==',
+      },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.videoUrl).toBe('https://cdn.flow2api.dev/out/video-2.mp4')
+
+    const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const payload = parseCompletionBody(requestInit)
+    expect(payload.model).toBe('veo_3_1_i2v_s_fast_fl')
+    const content = payload.messages[0]?.content
+    expect(Array.isArray(content)).toBe(true)
+    if (!Array.isArray(content)) {
+      throw new Error('content should be multimodal array')
+    }
+    const imageParts = content.filter((entry) => entry.type === 'image_url')
+    expect(imageParts).toHaveLength(2)
+  })
+
+  it('throws when generationMode=firstlastframe but lastFrameImageUrl is missing', async () => {
+    const generator = new Flow2ApiVideoGenerator('flow2api')
+    const result = await generator.generate({
+      userId: 'user-1',
+      imageUrl: 'data:image/png;base64,Zmlyc3QtZnJhbWU=',
+      prompt: '让角色转身',
+      options: {
+        modelId: 'veo-3.1-fast-generate-preview',
+        generationMode: 'firstlastframe',
+      },
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('FLOW2API_VIDEO_OPTION_REQUIRED: lastFrameImageUrl')
   })
 })
