@@ -71,14 +71,14 @@ class SharedSubscriber {
 }
 
 type GlobalSharedSubscriber = typeof globalThis & {
-  __waoowaooSharedSubscriber?: SharedSubscriber
+  __foldxSharedSubscriber?: SharedSubscriber
 }
 
 const globalForSharedSubscriber = globalThis as GlobalSharedSubscriber
 
 export function getSharedSubscriber() {
-  if (!globalForSharedSubscriber.__waoowaooSharedSubscriber) {
-    globalForSharedSubscriber.__waoowaooSharedSubscriber = new SharedSubscriber()
+  if (!globalForSharedSubscriber.__foldxSharedSubscriber) {
+    globalForSharedSubscriber.__foldxSharedSubscriber = new SharedSubscriber()
   }
-  return globalForSharedSubscriber.__waoowaooSharedSubscriber
+  return globalForSharedSubscriber.__foldxSharedSubscriber
 }

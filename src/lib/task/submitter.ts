@@ -103,9 +103,9 @@ export async function submitTask(params: {
       userId: params.userId,
     },
     attributes: {
-      'waoowaoo.task_type': params.type,
-      'waoowaoo.target_type': params.targetType,
-      'waoowaoo.target_id': params.targetId,
+      'foldx.task_type': params.type,
+      'foldx.target_type': params.targetType,
+      'foldx.target_id': params.targetId,
     },
     run: async (submitSpan) => {
 
@@ -136,7 +136,7 @@ export async function submitTask(params: {
         maxAttempts: params.maxAttempts,
         billingInfo: resolvedBillingInfo || null,
       })
-      submitSpan.setAttribute('waoowaoo.task_id', task.id)
+      submitSpan.setAttribute('foldx.task_id', task.id)
       const queueName = getQueueTypeByTaskType(params.type)
       recordTaskSubmit({
         requestId: params.requestId || null,

@@ -3,6 +3,28 @@
   color: var(--glass-text-primary);
 }
 
+.glass-atmosphere {
+  background-image:
+    radial-gradient(1300px 560px at 80% -8%, rgba(37, 99, 235, 0.18), transparent 62%),
+    radial-gradient(960px 520px at 0% 100%, rgba(100, 116, 139, 0.18), transparent 64%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(232, 237, 244, 0.74));
+  background-attachment: fixed;
+}
+
+.glass-shell {
+  margin: 0 auto;
+  width: min(1200px, calc(100% - 24px));
+}
+
+.glass-shell-content {
+  border: 1px solid var(--glass-stroke-soft);
+  border-radius: var(--glass-radius-xl);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.7), rgba(234, 241, 252, 0.6));
+  box-shadow: var(--glass-shadow-lg);
+  backdrop-filter: blur(var(--glass-blur-lg));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg));
+}
+
 .glass-surface {
   background: var(--glass-bg-surface);
   border: 1px solid var(--glass-stroke-soft);
@@ -73,7 +95,10 @@
   box-shadow: inset 0 0 0 1px var(--glass-stroke-base);
   color: var(--glass-text-primary);
   outline: none;
-  transition: box-shadow 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+  transition:
+    box-shadow var(--motion-duration-base) var(--motion-ease-standard),
+    background-color var(--motion-duration-base) var(--motion-ease-standard),
+    transform var(--motion-duration-base) var(--motion-ease-standard);
 }
 
 .glass-input-base::placeholder,
@@ -120,7 +145,7 @@
   font-weight: 600;
   border-radius: var(--glass-radius-md);
   border: 1px solid transparent;
-  transition: all 0.2s ease;
+  transition: all var(--motion-duration-base) var(--motion-ease-standard);
   white-space: nowrap;
 }
 

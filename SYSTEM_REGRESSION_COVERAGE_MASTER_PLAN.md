@@ -2,7 +2,7 @@
 
 # 全系统回归测试执行主计划
 版本: v1.0
-仓库: /Users/earth/Desktop/waoowaoo
+仓库: /Users/earth/Desktop/foldx
 最后更新: 2026-02-25
 责任模式: 单一主计划文档驱动（本文件是唯一事实来源）
 
@@ -229,55 +229,55 @@
 - [YYYY-MM-DD HH:mm] 问题: <若有>
 
 - [2026-02-25 10:00] 状态变更: Phase 1.3/1.4/1.5/1.6/1.7 🔄/⏸ -> ✅
-- [2026-02-25 10:00] 修改文件: /Users/earth/Desktop/waoowaoo/tests/helpers/db-reset.ts, /Users/earth/Desktop/waoowaoo/tests/helpers/request.ts, /Users/earth/Desktop/waoowaoo/tests/helpers/auth.ts, /Users/earth/Desktop/waoowaoo/tests/helpers/fixtures.ts
+- [2026-02-25 10:00] 修改文件: /Users/earth/Desktop/foldx/tests/helpers/db-reset.ts, /Users/earth/Desktop/foldx/tests/helpers/request.ts, /Users/earth/Desktop/foldx/tests/helpers/auth.ts, /Users/earth/Desktop/foldx/tests/helpers/fixtures.ts
 - [2026-02-25 10:00] 运行命令: git show/git ls-tree（只读盘点）
 - [2026-02-25 10:00] 结果: 已完成测试基础 helper 与系统重置扩展
 - [2026-02-25 10:00] 问题: Phase 1.8 仍需推进全系统 bootstrap 统一
 
 - [2026-02-25 10:05] 状态变更: Phase 2.1/2.2/2.3/2.4/2.5/2.6 ⏸ -> ✅
-- [2026-02-25 10:05] 修改文件: /Users/earth/Desktop/waoowaoo/tests/contracts/route-catalog.ts, /Users/earth/Desktop/waoowaoo/tests/contracts/task-type-catalog.ts, /Users/earth/Desktop/waoowaoo/tests/contracts/requirements-matrix.ts, /Users/earth/Desktop/waoowaoo/scripts/guards/test-route-coverage-guard.mjs, /Users/earth/Desktop/waoowaoo/scripts/guards/test-tasktype-coverage-guard.mjs, /Users/earth/Desktop/waoowaoo/package.json
+- [2026-02-25 10:05] 修改文件: /Users/earth/Desktop/foldx/tests/contracts/route-catalog.ts, /Users/earth/Desktop/foldx/tests/contracts/task-type-catalog.ts, /Users/earth/Desktop/foldx/tests/contracts/requirements-matrix.ts, /Users/earth/Desktop/foldx/scripts/guards/test-route-coverage-guard.mjs, /Users/earth/Desktop/foldx/scripts/guards/test-tasktype-coverage-guard.mjs, /Users/earth/Desktop/foldx/package.json
 - [2026-02-25 10:05] 运行命令: git show/git ls-tree（只读盘点）
 - [2026-02-25 10:05] 结果: 覆盖矩阵与守卫脚本落地，新增 test:pr/test:regression 入口
 - [2026-02-25 10:05] 问题: 需在 CI workflow 文件接入 test:pr（Phase 8.2）
 
 - [2026-02-25 10:10] 状态变更: Phase 3.1/3.2/3.3/3.4/3.5 ⏸/⚠️ -> ✅
-- [2026-02-25 10:10] 修改文件: /Users/earth/Desktop/waoowaoo/src/lib/llm-observe/route-task.ts, /Users/earth/Desktop/waoowaoo/src/lib/task/submitter.ts, /Users/earth/Desktop/waoowaoo/src/lib/task/state-service.ts, /Users/earth/Desktop/waoowaoo/tests/unit/helpers/*.test.ts
+- [2026-02-25 10:10] 修改文件: /Users/earth/Desktop/foldx/src/lib/llm-observe/route-task.ts, /Users/earth/Desktop/foldx/src/lib/task/submitter.ts, /Users/earth/Desktop/foldx/src/lib/task/state-service.ts, /Users/earth/Desktop/foldx/tests/unit/helpers/*.test.ts
 - [2026-02-25 10:10] 运行命令: 待执行测试命令验证
 - [2026-02-25 10:10] 结果: 关键 pure helper 单测已落地，核心函数可测性增强
 - [2026-02-25 10:10] 问题: 无
 
 - [2026-02-25 10:15] 状态变更: Phase 4.1/4.2/4.3/4.4/4.5/4.6 ⏸ -> ✅
-- [2026-02-25 10:15] 修改文件: /Users/earth/Desktop/waoowaoo/tests/integration/api/helpers/call-route.ts, /Users/earth/Desktop/waoowaoo/tests/integration/api/contract/*.test.ts, /Users/earth/Desktop/waoowaoo/tests/integration/api/specific/*.test.ts
+- [2026-02-25 10:15] 修改文件: /Users/earth/Desktop/foldx/tests/integration/api/helpers/call-route.ts, /Users/earth/Desktop/foldx/tests/integration/api/contract/*.test.ts, /Users/earth/Desktop/foldx/tests/integration/api/specific/*.test.ts
 - [2026-02-25 10:15] 运行命令: 待执行测试命令验证
 - [2026-02-25 10:15] 结果: API 契约分组测试模板已落地并接入 catalog
 - [2026-02-25 10:15] 问题: 动态 DB 真值契约仍需持续加深
 
 - [2026-02-25 10:20] 状态变更: Phase 5.1/5.2/5.3/5.4/5.5, Phase 6.1/6.2/6.3/6.4/6.5/6.6, Phase 7.2/7.3, Phase 8.1 ⏸ -> ✅
-- [2026-02-25 10:20] 修改文件: /Users/earth/Desktop/waoowaoo/tests/unit/worker/*.test.ts, /Users/earth/Desktop/waoowaoo/tests/integration/chain/*.test.ts, /Users/earth/Desktop/waoowaoo/tests/helpers/fakes/*.ts, /Users/earth/Desktop/waoowaoo/tests/setup/env.ts, /Users/earth/Desktop/waoowaoo/tests/unit/optimistic/task-target-state-map.test.ts, /Users/earth/Desktop/waoowaoo/tests/unit/optimistic/sse-invalidation.test.ts
+- [2026-02-25 10:20] 修改文件: /Users/earth/Desktop/foldx/tests/unit/worker/*.test.ts, /Users/earth/Desktop/foldx/tests/integration/chain/*.test.ts, /Users/earth/Desktop/foldx/tests/helpers/fakes/*.ts, /Users/earth/Desktop/foldx/tests/setup/env.ts, /Users/earth/Desktop/foldx/tests/unit/optimistic/task-target-state-map.test.ts, /Users/earth/Desktop/foldx/tests/unit/optimistic/sse-invalidation.test.ts
 - [2026-02-25 10:20] 运行命令: 待执行测试命令验证
 - [2026-02-25 10:20] 结果: Worker/Chain/Optimistic 第一批回归防线与网络闸门已落地
 - [2026-02-25 10:20] 问题: Phase 7.1 与 Phase 8.2/8.3/8.4 仍需推进
 
 - [2026-02-25 10:25] 状态变更: Phase 1.8 ⚠️ -> ✅, Phase 8.2 ⏸ -> ✅
-- [2026-02-25 10:25] 修改文件: /Users/earth/Desktop/waoowaoo/tests/setup/global-setup.ts, /Users/earth/Desktop/waoowaoo/tests/setup/global-teardown.ts, /Users/earth/Desktop/waoowaoo/.github/workflows/test-regression-pr.yml
+- [2026-02-25 10:25] 修改文件: /Users/earth/Desktop/foldx/tests/setup/global-setup.ts, /Users/earth/Desktop/foldx/tests/setup/global-teardown.ts, /Users/earth/Desktop/foldx/.github/workflows/test-regression-pr.yml
 - [2026-02-25 10:25] 运行命令: npm run test:pr
 - [2026-02-25 10:25] 结果: test:guards/test:unit:all/test:billing:integration/test:integration:api/test:integration:chain 全部通过
 - [2026-02-25 10:25] 问题: 单测过程仍会出现 Redis 连接拒绝日志噪音（不影响通过）
 
 - [2026-02-25 10:30] 状态变更: Phase 8.3/8.4 ⏸ -> ✅
-- [2026-02-25 10:30] 修改文件: /Users/earth/Desktop/waoowaoo/scripts/test-regression-runner.sh, /Users/earth/Desktop/waoowaoo/package.json
+- [2026-02-25 10:30] 修改文件: /Users/earth/Desktop/foldx/scripts/test-regression-runner.sh, /Users/earth/Desktop/foldx/package.json
 - [2026-02-25 10:30] 运行命令: npm run test:guards
 - [2026-02-25 10:30] 结果: 回归失败统一诊断脚本已接入 test:pr，guard 通过
 - [2026-02-25 10:30] 问题: 无
 
 - [2026-02-25 10:40] 状态变更: 回归门禁验收执行
-- [2026-02-25 10:40] 修改文件: /Users/earth/Desktop/waoowaoo/SYSTEM_REGRESSION_COVERAGE_MASTER_PLAN.md
+- [2026-02-25 10:40] 修改文件: /Users/earth/Desktop/foldx/SYSTEM_REGRESSION_COVERAGE_MASTER_PLAN.md
 - [2026-02-25 10:40] 运行命令: npm run test:pr
 - [2026-02-25 10:40] 结果: 全链路门禁通过（test:guards、test:unit:all、test:billing:integration、test:integration:api、test:integration:chain）
 - [2026-02-25 10:40] 问题: 测试日志中仍有 Redis 连接拒绝噪音（不影响通过）
 
 - [2026-02-25 22:00] 状态变更: Phase 5.1 结果断言增强 + 回归缺口修复
-- [2026-02-25 22:00] 修改文件: /Users/earth/Desktop/waoowaoo/src/lib/workers/handlers/reference-to-character.ts, /Users/earth/Desktop/waoowaoo/tests/unit/worker/reference-to-character.test.ts, /Users/earth/Desktop/waoowaoo/tests/contracts/requirements-matrix.ts, /Users/earth/Desktop/waoowaoo/tests/contracts/requirements-matrix.test.ts, /Users/earth/Desktop/waoowaoo/SYSTEM_REGRESSION_COVERAGE_MASTER_PLAN.md
+- [2026-02-25 22:00] 修改文件: /Users/earth/Desktop/foldx/src/lib/workers/handlers/reference-to-character.ts, /Users/earth/Desktop/foldx/tests/unit/worker/reference-to-character.test.ts, /Users/earth/Desktop/foldx/tests/contracts/requirements-matrix.ts, /Users/earth/Desktop/foldx/tests/contracts/requirements-matrix.test.ts, /Users/earth/Desktop/foldx/SYSTEM_REGRESSION_COVERAGE_MASTER_PLAN.md
 - [2026-02-25 22:00] 运行命令: BILLING_TEST_BOOTSTRAP=0 npx vitest run tests/unit/worker/reference-to-character.test.ts tests/unit/worker/asset-hub-image-suffix.test.ts tests/unit/worker/modify-image-reference-description.test.ts tests/integration/api/specific/characters-post-reference-forwarding.test.ts tests/contracts/requirements-matrix.test.ts && BILLING_TEST_BOOTSTRAP=0 npx vitest run tests/unit/worker
 - [2026-02-25 22:00] 结果: 关键回归链路测试通过；新增 requirements matrix 完整性断言可阻断不存在测试文件引用；worker 全套通过
 - [2026-02-25 22:00] 问题: worker 单测日志仍有 Redis ECONNREFUSED 噪音（断言通过，不影响结果）
@@ -322,7 +322,7 @@
 
 # 全系统回归测试执行主计划
 版本: v1.0
-仓库: /Users/earth/Desktop/waoowaoo
+仓库: /Users/earth/Desktop/foldx
 最后更新: 2026-02-25
 责任模式: 单一主计划文档驱动（本文件是唯一事实来源）
 

@@ -481,7 +481,19 @@ export async function chatCompletionStream(
 
         // 读取 AI SDK warnings（如 temperature 不支持等）和最终 finishReason
         let sdkWarnings: unknown[] = []
-        let sdkFinishReason: string | undefined
+        const sdkFinishReason = await readOptionalValue({
+          read: async () => await Promise.resolve(aiStreamResult.finishReason) as string | undefined,
+          fallback: undefined,
+          onError: (error: unknown) => logStreamTelemetryReadFailure({
+            userId,
+            projectId,
+            provider: providerName,
+            modelId: resolvedModelId,
+            modelKey: selection.modelKey,
+            field: 'finishReason',
+            error,
+          }),
+        })
         let sdkProviderMetadata: unknown = undefined
         let sdkResponseStatus: number | undefined
         let sdkResponseHeaders: Record<string, string> | undefined
@@ -498,19 +510,6 @@ export async function chatCompletionStream(
             modelId: resolvedModelId,
             modelKey: selection.modelKey,
             field: 'warnings',
-            error,
-          }),
-        })
-        sdkFinishReason = await readOptionalValue({
-          read: async () => await Promise.resolve(aiStreamResult.finishReason) as string | undefined,
-          fallback: undefined,
-          onError: (error: unknown) => logStreamTelemetryReadFailure({
-            userId,
-            projectId,
-            provider: providerName,
-            modelId: resolvedModelId,
-            modelKey: selection.modelKey,
-            field: 'finishReason',
             error,
           }),
         })

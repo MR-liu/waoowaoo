@@ -1,27 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: waoowaoo-worker-video
-  namespace: waoowaoo-prod
+  name: foldx-worker-video
+  namespace: foldx-prod
   labels:
-    app.kubernetes.io/name: waoowaoo
+    app.kubernetes.io/name: foldx
     app.kubernetes.io/component: worker-video
 spec:
   replicas: 2
   revisionHistoryLimit: 5
   selector:
     matchLabels:
-      app.kubernetes.io/name: waoowaoo
+      app.kubernetes.io/name: foldx
       app.kubernetes.io/component: worker-video
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: waoowaoo
+        app.kubernetes.io/name: foldx
         app.kubernetes.io/component: worker-video
     spec:
       containers:
         - name: worker-video
-          image: waoowaoo:latest
+          image: foldx:latest
           imagePullPolicy: IfNotPresent
           command: ["sh", "-c", "npm run start:worker"]
           env:
@@ -29,9 +29,9 @@ spec:
               value: "video"
           envFrom:
             - configMapRef:
-                name: waoowaoo-app-config
+                name: foldx-app-config
             - secretRef:
-                name: waoowaoo-app-secret
+                name: foldx-app-secret
           resources:
             requests:
               cpu: "1"

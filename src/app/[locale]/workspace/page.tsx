@@ -256,19 +256,19 @@ export default function WorkspacePage() {
 
   if (status === 'loading' || !session) {
     return (
-      <div className="glass-page min-h-screen flex items-center justify-center">
+      <div className="glass-page glass-atmosphere min-h-screen flex items-center justify-center">
         <div className="text-[var(--glass-text-secondary)]">{tc('loading')}</div>
       </div>
     )
   }
 
   return (
-    <div className="glass-page min-h-screen">
+    <div className="glass-page glass-atmosphere min-h-screen">
       {/* Header - 统一导航栏 */}
       <Navbar />
 
       {/* Main Content */}
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10 py-8">
+      <main className="glass-shell px-2 sm:px-4 py-8">
         <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-[var(--glass-text-primary)] mb-2">{t('title')}</h1>

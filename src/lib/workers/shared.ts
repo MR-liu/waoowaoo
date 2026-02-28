@@ -228,10 +228,10 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
       userId: data.userId,
     },
     attributes: {
-      'waoowaoo.task_type': data.type,
-      'waoowaoo.queue_name': job.queueName,
-      'waoowaoo.target_type': data.targetType,
-      'waoowaoo.target_id': data.targetId,
+      'foldx.task_type': data.type,
+      'foldx.queue_name': job.queueName,
+      'foldx.target_type': data.targetType,
+      'foldx.target_id': data.targetId,
     },
   })
   let workerOutcome: 'completed' | 'failed' | 'retry_scheduled' | 'terminated' | 'skipped_terminal' | 'unknown' = 'unknown'
@@ -268,7 +268,7 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
     const markedProcessing = await tryMarkTaskProcessing(taskId)
     if (!markedProcessing) {
       workerOutcome = 'skipped_terminal'
-      workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
+      workerSpan.setAttribute('foldx.worker_outcome', workerOutcome)
       const rollbackResult = await rollbackTaskBillingForTask({
         taskId,
         billingInfo,
@@ -356,7 +356,7 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
       details: result || null,
     })
     workerOutcome = 'completed'
-    workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
+    workerSpan.setAttribute('foldx.worker_outcome', workerOutcome)
     recordTaskWorkerLifecycle({
       requestId: data.trace?.requestId || null,
       taskId,
@@ -394,7 +394,7 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
   } catch (error: unknown) {
     if (error instanceof TaskTerminatedError) {
       workerOutcome = 'terminated'
-      workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
+      workerSpan.setAttribute('foldx.worker_outcome', workerOutcome)
       if (billingInfo?.billable) {
         billingInfo = (await rollbackTaskBilling({
           id: taskId,
@@ -458,7 +458,7 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
     }
     if (retryDecision.enabled) {
       workerOutcome = 'retry_scheduled'
-      workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
+      workerSpan.setAttribute('foldx.worker_outcome', workerOutcome)
       logger.error({
         ...workerFailureLog,
         action: 'worker.failed.retryable',
@@ -552,7 +552,7 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
     const markedFailed = await tryMarkTaskFailed(taskId, normalizedError.code, normalizedError.message)
     if (!markedFailed) {
       workerOutcome = 'skipped_terminal'
-      workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
+      workerSpan.setAttribute('foldx.worker_outcome', workerOutcome)
       recordTaskWorkerLifecycle({
         requestId: data.trace?.requestId || null,
         taskId,
@@ -571,7 +571,7 @@ export async function withTaskLifecycle(job: Job<TaskJobData>, handler: (job: Jo
       throw new UnrecoverableError('task already terminal')
     }
     workerOutcome = 'failed'
-    workerSpan.setAttribute('waoowaoo.worker_outcome', workerOutcome)
+    workerSpan.setAttribute('foldx.worker_outcome', workerOutcome)
     recordTaskWorkerLifecycle({
       requestId: data.trace?.requestId || null,
       taskId,

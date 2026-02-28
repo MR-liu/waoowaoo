@@ -30,7 +30,7 @@ describe('release report artifact helpers', () => {
   })
 
   it('writes json artifact and returns absolute path', () => {
-    const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'waoowaoo-release-report-'))
+    const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'foldx-release-report-'))
     createdDirectories.push(tempDirectory)
     const artifactFile = path.join(tempDirectory, 'reports', 'release-gate.json')
     const outputPath = writeJsonArtifact(artifactFile, { ok: true, count: 2 })

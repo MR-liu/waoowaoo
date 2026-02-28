@@ -73,7 +73,7 @@ export default async function LocaleLayout({
     return (
         <html lang={locale}>
             <body
-                className={`${geistSans.variable} ${geistMono.variable} ${poppins.variable} ${openSans.variable} antialiased`}
+                className={`${geistSans.variable} ${geistMono.variable} ${poppins.variable} ${openSans.variable} antialiased selection:bg-[var(--glass-tone-info-bg)]`}
             >
                 <NextIntlClientProvider messages={messages}>
                     <Providers>

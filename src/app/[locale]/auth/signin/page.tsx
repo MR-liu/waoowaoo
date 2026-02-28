@@ -100,12 +100,7 @@ export default function SignIn() {
             </form>
 
             <div className="mt-6 text-center">
-              <p className="text-[var(--glass-text-secondary)]">
-                {t('noAccount')}{" "}
-                <Link href="/auth/signup" className="text-[var(--glass-tone-info-fg)] hover:underline font-medium">
-                  {t('signupNow')}
-                </Link>
-              </p>
+              <p className="text-[var(--glass-text-secondary)] text-sm">{t('internalOnlyHint')}</p>
             </div>
 
             <div className="mt-6 text-center">

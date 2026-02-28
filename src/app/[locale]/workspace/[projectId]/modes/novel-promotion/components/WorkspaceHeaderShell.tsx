@@ -1,10 +1,12 @@
 'use client'
 
 import { CapsuleNav, EpisodeSelector } from '@/components/ui/CapsuleNav'
+import { motion } from 'framer-motion'
 import { SettingsModal, WorldContextModal } from '@/components/ui/ConfigModals'
 import WorkspaceTopActions from './WorkspaceTopActions'
 import type { NovelPromotionPanel } from '@/types/project'
 import type { CapabilitySelections, ModelCapabilities } from '@/lib/model-config-contract'
+import { MOTION_PRESETS } from '@/lib/ui/motion'
 
 interface EpisodeSummary {
   id: string
@@ -157,44 +159,60 @@ export default function WorkspaceHeaderShell({
           return d !== 0 ? d : a.name.localeCompare(b.name, 'zh')
         })
         return (
-          <EpisodeSelector
-            projectName={projectName}
-            episodes={sorted.map((ep) => ({
-              id: ep.id,
-              title: ep.name,
-              summary: ep.description ?? undefined,
-              status: {
-                script: ep.clips?.length ? 'ready' as const : 'empty' as const,
-                visual: ep.storyboards?.some((sb) => sb.panels?.some((panel) => panel.videoUrl)) ? 'ready' as const : 'empty' as const,
-              },
-            }))}
-            currentId={currentEpisodeId}
-            onSelect={(id) => onEpisodeSelect?.(id)}
-            onAdd={onEpisodeCreate}
-            onRename={(id, newName) => onEpisodeRename?.(id, newName)}
-            onDelete={onEpisodeDelete}
-          />
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={MOTION_PRESETS.spring.gentle}
+          >
+            <EpisodeSelector
+              projectName={projectName}
+              episodes={sorted.map((ep) => ({
+                id: ep.id,
+                title: ep.name,
+                summary: ep.description ?? undefined,
+                status: {
+                  script: ep.clips?.length ? 'ready' as const : 'empty' as const,
+                  visual: ep.storyboards?.some((sb) => sb.panels?.some((panel) => panel.videoUrl)) ? 'ready' as const : 'empty' as const,
+                },
+              }))}
+              currentId={currentEpisodeId}
+              onSelect={(id) => onEpisodeSelect?.(id)}
+              onAdd={onEpisodeCreate}
+              onRename={(id, newName) => onEpisodeRename?.(id, newName)}
+              onDelete={onEpisodeDelete}
+            />
+          </motion.div>
         )
       })()}
 
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={MOTION_PRESETS.spring.gentle}
+      >
+        <CapsuleNav
+          items={capsuleNavItems}
+          activeId={currentStage}
+          onItemClick={onStageChange}
+          projectId={projectId}
+          episodeId={episodeId}
+        />
+      </motion.div>
 
-
-      <CapsuleNav
-        items={capsuleNavItems}
-        activeId={currentStage}
-        onItemClick={onStageChange}
-        projectId={projectId}
-        episodeId={episodeId}
-      />
-
-      <WorkspaceTopActions
-        onOpenAssetLibrary={onOpenAssetLibrary}
-        onOpenSettings={onOpenSettingsModal}
-        onRefresh={onRefresh}
-        assetLibraryLabel={assetLibraryLabel}
-        settingsLabel={settingsLabel}
-        refreshTitle={refreshTitle}
-      />
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={MOTION_PRESETS.spring.gentle}
+      >
+        <WorkspaceTopActions
+          onOpenAssetLibrary={onOpenAssetLibrary}
+          onOpenSettings={onOpenSettingsModal}
+          onRefresh={onRefresh}
+          assetLibraryLabel={assetLibraryLabel}
+          settingsLabel={settingsLabel}
+          refreshTitle={refreshTitle}
+        />
+      </motion.div>
     </>
   )
 }

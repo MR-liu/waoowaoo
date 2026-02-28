@@ -1,11 +1,11 @@
 # K8s Deployment (Baseline)
 
 ## Prerequisites
-- Build and push image: `waoowaoo:<tag>`
+- Build and push image: `foldx:<tag>`
 - Create namespace/secret/config before rollout
 
 ## Secret
-- Use `deploy/k8s/base/secret-app.template.yaml` to create `waoowaoo-app-secret`
+- Use `deploy/k8s/base/secret-app.template.yaml` to create `foldx-app-secret`
 - Do not commit real credentials
 
 ## Apply

@@ -1,13 +1,13 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: waoowaoo-worker-text
-  namespace: waoowaoo-prod
+  name: foldx-worker-text
+  namespace: foldx-prod
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: waoowaoo-worker-text
+    name: foldx-worker-text
   minReplicas: 2
   maxReplicas: 16
   metrics:

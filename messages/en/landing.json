@@ -1,8 +1,8 @@
 {
-  "title": "waoowaoo",
+  "title": "fold-x",
   "subtitle": "AI Film & TV Studio",
   "enterWorkspace": "Enter Workspace",
-  "getStarted": "Get Started",
+  "getStarted": "Sign In",
   "learnMore": "Learn More",
   "features": {
     "title": "Unleash Infinite Creativity",
@@ -21,6 +21,6 @@
     }
   },
   "footer": {
-    "copyright": "2026 waoowaoo AI. All rights reserved."
+    "copyright": "2026 fold-x AI. All rights reserved."
   }
 }

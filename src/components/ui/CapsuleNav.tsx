@@ -2,7 +2,9 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
+import { motion, AnimatePresence } from 'framer-motion'
 import { AppIcon } from '@/components/ui/icons'
+import { MOTION_PRESETS } from '@/lib/ui/motion'
 
 type StepStatus = 'empty' | 'active' | 'processing' | 'ready'
 
@@ -66,10 +68,13 @@ function NavItem({
 
     return (
         <div className="relative group">
-            <button
+            <motion.button
                 onClick={handleClick}
                 onAuxClick={handleAuxClick}
                 disabled={disabled}
+                whileHover={!disabled ? MOTION_PRESETS.hover : undefined}
+                whileTap={!disabled ? MOTION_PRESETS.press : undefined}
+                transition={MOTION_PRESETS.spring.snappy}
                 className={`
                     relative flex min-h-[52px] items-center gap-1 px-6 pt-3.5 pb-4 transition-all duration-300 ease-out
                     ${disabled
@@ -102,7 +107,7 @@ function NavItem({
                 {status === 'processing' && !disabled && (
                     <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[var(--glass-accent-from)] animate-pulse" />
                 )}
-            </button>
+            </motion.button>
             {disabled && disabledLabel && (
                 <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
                     <div className="glass-surface-soft text-xs px-3 py-2 whitespace-nowrap text-[var(--glass-text-primary)]">
@@ -133,8 +138,13 @@ export function CapsuleNav({ items, activeId, onItemClick, projectId, episodeId 
     }
 
     return (
-        <nav className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-fadeInDown">
-            <div
+        <motion.nav
+            className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-fadeInDown"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={MOTION_PRESETS.spring.gentle}
+        >
+            <motion.div
                 className="flex rounded-full px-2 py-1"
                 style={{
                     background: 'rgba(255,255,255,0.55)',
@@ -143,6 +153,7 @@ export function CapsuleNav({ items, activeId, onItemClick, projectId, episodeId 
                     border: '1px solid rgba(255,255,255,0.45)',
                     boxShadow: '0 8px 32px rgba(0,0,0,0.06), 0 1.5px 6px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.7)',
                 }}
+                transition={MOTION_PRESETS.spring.snappy}
             >
                 {items.map((item) => (
                     <NavItem
@@ -156,8 +167,8 @@ export function CapsuleNav({ items, activeId, onItemClick, projectId, episodeId 
                         disabledLabel={item.disabledLabel}
                     />
                 ))}
-            </div>
-        </nav>
+            </motion.div>
+        </motion.nav>
     )
 }
 
@@ -216,10 +227,13 @@ export function EpisodeSelector({
 
     return (
         <div className="fixed top-20 left-6 z-[60]" ref={menuRef}>
-            <button
+            <motion.button
                 onClick={() => setIsOpen(!isOpen)}
                 className="glass-btn-base glass-btn-secondary flex items-center gap-3 px-4 py-3 transition-all group"
                 style={{ borderRadius: '1.5rem' }}
+                whileHover={MOTION_PRESETS.hover}
+                whileTap={MOTION_PRESETS.press}
+                transition={MOTION_PRESETS.spring.snappy}
             >
                 <div className="glass-surface-soft flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold text-[var(--glass-tone-info-fg)]">
                     {t('episode')}
@@ -233,10 +247,17 @@ export function EpisodeSelector({
                     </span>
                 </div>
                 <AppIcon name="chevronDown" className={`w-4 h-4 text-[var(--glass-text-tertiary)] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
+            </motion.button>
 
-            {isOpen && (
-                <div className="glass-surface-modal absolute left-0 top-full mt-2 w-72 origin-top-left p-2 animate-fadeIn">
+            <AnimatePresence>
+                {isOpen && (
+                <motion.div
+                    className="glass-surface-modal absolute left-0 top-full mt-2 w-72 origin-top-left p-2 animate-fadeIn"
+                    initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                    transition={MOTION_PRESETS.spring.modal}
+                >
                     <div className="max-h-[300px] overflow-y-auto custom-scrollbar space-y-1">
                         {episodes.map(ep => {
                             const statusColor = ep.status?.visual === 'ready'
@@ -378,8 +399,9 @@ export function EpisodeSelector({
                             </button>
                         </>
                     )}
-                </div>
-            )}
+                </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     )
 }

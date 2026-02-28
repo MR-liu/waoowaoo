@@ -3,14 +3,16 @@
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
+import { motion } from 'framer-motion'
 import Navbar from '@/components/Navbar'
+import { MOTION_PRESETS } from '@/lib/ui/motion'
 
 export default function Home() {
   const t = useTranslations('landing')
   const { data: session } = useSession()
 
   return (
-    <div className="glass-page min-h-screen overflow-hidden font-sans selection:bg-[var(--glass-tone-info-bg)]">
+    <div className="glass-page glass-atmosphere min-h-screen overflow-hidden font-sans selection:bg-[var(--glass-tone-info-bg)]">
       {/* Navbar */}
       <div className="relative z-50">
         <Navbar />
@@ -21,7 +23,12 @@ export default function Home() {
         <div className="absolute inset-0 bg-[radial-gradient(1200px_600px_at_80%_-10%,rgba(138,170,255,0.12),transparent),radial-gradient(900px_500px_at_0%_100%,rgba(148,163,184,0.16),transparent)]"></div>
       </div>
 
-      <main className="relative z-10">
+      <motion.main
+        className="relative z-10"
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={MOTION_PRESETS.spring.gentle}
+      >
         <section className="relative min-h-screen flex items-center justify-center -mt-16 px-4">
           <div className="container mx-auto grid lg:grid-cols-2 gap-16 items-center">
             <div className="text-left space-y-8 animate-slide-up" style={{ animationDuration: '0.8s' }}>
@@ -44,7 +51,7 @@ export default function Home() {
                   </Link>
                 ) : (
                   <Link
-                    href="/auth/signup"
+                    href="/auth/signin"
                     className="glass-btn-base glass-btn-primary px-8 py-4 rounded-xl font-semibold transition-all duration-300"
                   >
                     {t('getStarted')}
@@ -79,7 +86,7 @@ export default function Home() {
             </div>
           </div>
         </section>
-      </main>
+      </motion.main>
     </div>
   )
 }

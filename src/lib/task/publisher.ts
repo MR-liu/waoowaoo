@@ -620,8 +620,8 @@ export async function publishTaskLifecycleEvent(params: {
       userId: params.userId,
     },
     attributes: {
-      'waoowaoo.event_type': normalizedType,
-      'waoowaoo.persist': persist,
+      'foldx.event_type': normalizedType,
+      'foldx.persist': persist,
     },
   })
 
@@ -759,8 +759,8 @@ export async function publishTaskStreamEvent(params: {
       userId: params.userId,
     },
     attributes: {
-      'waoowaoo.event_type': TASK_SSE_EVENT_TYPE.STREAM,
-      'waoowaoo.persist': persist,
+      'foldx.event_type': TASK_SSE_EVENT_TYPE.STREAM,
+      'foldx.persist': persist,
     },
   })
 

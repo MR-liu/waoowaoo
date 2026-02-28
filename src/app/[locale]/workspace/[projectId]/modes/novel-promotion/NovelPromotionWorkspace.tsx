@@ -32,7 +32,7 @@ function NovelPromotionWorkspaceContent(props: NovelPromotionWorkspaceProps) {
   }
 
   return (
-    <div>
+    <div className="animate-page-enter">
       <AnimatedBackground />
 
       <WorkspaceHeaderShell
@@ -74,7 +74,7 @@ function NovelPromotionWorkspaceContent(props: NovelPromotionWorkspaceProps) {
         refreshTitle={vm.i18n.t('buttons.refreshData')}
       />
 
-      <div className="pt-24">
+      <div className="pt-24 glass-shell-content p-4 md:p-6">
         <WorkspaceStageRuntimeProvider value={vm.runtime.stageRuntime}>
           <WorkspaceStageContent currentStage={vm.stageNav.currentStage} />
         </WorkspaceStageRuntimeProvider>

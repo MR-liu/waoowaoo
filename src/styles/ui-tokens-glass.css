@@ -1,31 +1,31 @@
 :root {
   /* Surface and text */
-  --glass-bg-canvas: #f3f4f6;
-  --glass-bg-surface: rgba(255, 255, 255, 0.88);
-  --glass-bg-surface-strong: rgba(255, 255, 255, 0.94);
-  --glass-bg-surface-modal: rgba(255, 255, 255, 0.97);
-  --glass-bg-muted: rgba(255, 255, 255, 0.86);
-  --glass-bg-nav: rgba(255, 255, 255, 0.96);
-  --glass-text-primary: #0a0a0a;
-  --glass-text-secondary: #111827;
-  --glass-text-tertiary: #4b5563;
+  --glass-bg-canvas: #e8edf4;
+  --glass-bg-surface: rgba(255, 255, 255, 0.74);
+  --glass-bg-surface-strong: rgba(255, 255, 255, 0.84);
+  --glass-bg-surface-modal: rgba(255, 255, 255, 0.92);
+  --glass-bg-muted: rgba(241, 246, 255, 0.76);
+  --glass-bg-nav: rgba(238, 244, 255, 0.86);
+  --glass-text-primary: #0f172a;
+  --glass-text-secondary: #1e293b;
+  --glass-text-tertiary: #475569;
   --glass-text-on-accent: #ffffff;
 
   /* Border strategy: default weak stroke, focus/error stronger */
-  --glass-stroke-soft: rgba(255, 255, 255, 0.22);
-  --glass-stroke-base: rgba(111, 126, 153, 0.24);
-  --glass-stroke-strong: rgba(93, 109, 138, 0.36);
-  --glass-stroke-focus: rgba(47, 123, 255, 0.64);
+  --glass-stroke-soft: rgba(255, 255, 255, 0.48);
+  --glass-stroke-base: rgba(95, 117, 153, 0.32);
+  --glass-stroke-strong: rgba(70, 93, 133, 0.46);
+  --glass-stroke-focus: rgba(37, 99, 235, 0.64);
   --glass-stroke-danger: rgba(236, 72, 72, 0.64);
   --glass-stroke-warning: rgba(234, 149, 0, 0.62);
   --glass-stroke-success: rgba(18, 176, 109, 0.62);
 
   /* Elevation + blur */
-  --glass-shadow-sm: 0 2px 10px rgba(22, 35, 64, 0.05);
-  --glass-shadow-md: 0 6px 18px rgba(19, 35, 66, 0.08);
-  --glass-shadow-lg: 0 10px 24px rgba(20, 35, 69, 0.1);
-  --glass-shadow-modal: 0 14px 34px rgba(15, 32, 66, 0.14);
-  --glass-shadow-nav: 0 8px 18px rgba(15, 32, 66, 0.1);
+  --glass-shadow-sm: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --glass-shadow-md: 0 14px 34px rgba(15, 23, 42, 0.12);
+  --glass-shadow-lg: 0 20px 44px rgba(15, 23, 42, 0.16);
+  --glass-shadow-modal: 0 28px 64px rgba(15, 23, 42, 0.2);
+  --glass-shadow-nav: 0 12px 30px rgba(15, 23, 42, 0.14);
   --glass-blur-sm: 4px;
   --glass-blur-md: 8px;
   --glass-blur-lg: 12px;
@@ -51,28 +51,28 @@
   --glass-density-default-scale: 1;
 
   /* Tone system */
-  --glass-tone-neutral-bg: rgba(100, 116, 139, 0.18);
-  --glass-tone-neutral-fg: #374151;
-  --glass-tone-info-bg: rgba(47, 123, 255, 0.2);
-  --glass-tone-info-fg: #1d63e8;
-  --glass-tone-success-bg: rgba(16, 185, 129, 0.2);
-  --glass-tone-success-fg: #0f9f62;
-  --glass-tone-warning-bg: rgba(245, 158, 11, 0.24);
-  --glass-tone-warning-fg: #b86400;
-  --glass-tone-danger-bg: rgba(239, 68, 68, 0.2);
-  --glass-tone-danger-fg: #cb3a3a;
+  --glass-tone-neutral-bg: rgba(100, 116, 139, 0.2);
+  --glass-tone-neutral-fg: #334155;
+  --glass-tone-info-bg: rgba(37, 99, 235, 0.2);
+  --glass-tone-info-fg: #1d4ed8;
+  --glass-tone-success-bg: rgba(22, 163, 74, 0.2);
+  --glass-tone-success-fg: #15803d;
+  --glass-tone-warning-bg: rgba(217, 119, 6, 0.22);
+  --glass-tone-warning-fg: #92400e;
+  --glass-tone-danger-bg: rgba(220, 38, 38, 0.2);
+  --glass-tone-danger-fg: #b91c1c;
 
-  --glass-overlay-soft: rgba(10, 16, 30, 0.34);
-  --glass-overlay: rgba(10, 16, 30, 0.46);
-  --glass-overlay-strong: rgba(10, 16, 30, 0.58);
+  --glass-overlay-soft: rgba(15, 23, 42, 0.28);
+  --glass-overlay: rgba(15, 23, 42, 0.42);
+  --glass-overlay-strong: rgba(15, 23, 42, 0.56);
 
   /* Accent + interactive rings */
-  --glass-accent-from: #2f7bff;
-  --glass-accent-to: #5ca8ff;
-  --glass-accent-shadow-soft: rgba(47, 123, 255, 0.24);
-  --glass-accent-shadow-strong: rgba(47, 123, 255, 0.32);
-  --glass-focus-ring: rgba(47, 123, 255, 0.16);
-  --glass-focus-ring-strong: rgba(47, 123, 255, 0.22);
+  --glass-accent-from: #2563eb;
+  --glass-accent-to: #3b82f6;
+  --glass-accent-shadow-soft: rgba(37, 99, 235, 0.22);
+  --glass-accent-shadow-strong: rgba(37, 99, 235, 0.3);
+  --glass-focus-ring: rgba(37, 99, 235, 0.18);
+  --glass-focus-ring-strong: rgba(37, 99, 235, 0.24);
   --glass-danger-ring: rgba(239, 68, 68, 0.14);
   --glass-ghost-hover-bg: rgba(255, 255, 255, 0.5);
 }

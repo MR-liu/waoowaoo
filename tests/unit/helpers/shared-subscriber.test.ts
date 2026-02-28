@@ -21,7 +21,7 @@ describe('shared subscriber', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
-    delete (globalThis as { __waoowaooSharedSubscriber?: unknown }).__waoowaooSharedSubscriber
+    delete (globalThis as { __foldxSharedSubscriber?: unknown }).__foldxSharedSubscriber
   })
 
   it('logs error when unsubscribe fails', async () => {

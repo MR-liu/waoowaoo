@@ -1,27 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: waoowaoo-worker-text
-  namespace: waoowaoo-prod
+  name: foldx-worker-text
+  namespace: foldx-prod
   labels:
-    app.kubernetes.io/name: waoowaoo
+    app.kubernetes.io/name: foldx
     app.kubernetes.io/component: worker-text
 spec:
   replicas: 2
   revisionHistoryLimit: 5
   selector:
     matchLabels:
-      app.kubernetes.io/name: waoowaoo
+      app.kubernetes.io/name: foldx
       app.kubernetes.io/component: worker-text
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: waoowaoo
+        app.kubernetes.io/name: foldx
         app.kubernetes.io/component: worker-text
     spec:
       containers:
         - name: worker-text
-          image: waoowaoo:latest
+          image: foldx:latest
           imagePullPolicy: IfNotPresent
           command: ["sh", "-c", "npm run start:worker"]
           env:
@@ -29,9 +29,9 @@ spec:
               value: "text"
           envFrom:
             - configMapRef:
-                name: waoowaoo-app-config
+                name: foldx-app-config
             - secretRef:
-                name: waoowaoo-app-secret
+                name: foldx-app-secret
           resources:
             requests:
               cpu: "500m"

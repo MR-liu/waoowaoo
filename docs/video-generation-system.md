@@ -15,7 +15,7 @@
 
 1. 视频生成主任务类型：`TASK_TYPE.VIDEO_PANEL`
 2. 口型同步任务类型：`TASK_TYPE.LIP_SYNC`
-3. 队列：`waoowaoo-video`（BullMQ）
+3. 队列：`foldx-video`（BullMQ）
 4. 核心实体：`NovelPromotionPanel`、`NovelPromotionVoiceLine`、`Task`
 
 ## 3. 端到端主链路

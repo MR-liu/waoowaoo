@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "../styles/ui-tokens-glass.css";
 @import "../styles/ui-semantic-glass.css";
+@import "../styles/motion-tokens.css";
 
 :root {
   --background: var(--glass-bg-canvas);
@@ -41,7 +42,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-body), var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
 /* 可复用组件类 */

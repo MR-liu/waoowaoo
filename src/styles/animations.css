@@ -3,7 +3,7 @@
 @keyframes fadeInDown {
   from {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(calc(var(--motion-intensity-page-y) * -1));
   }
 
   to {
@@ -60,11 +60,11 @@
 }
 
 .animate-fadeInDown {
-  animation: fadeInDown 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: fadeInDown var(--motion-duration-slow) var(--motion-ease-emphasized);
 }
 
 .animate-fadeIn {
-  animation: fadeIn 0.15s ease-out;
+  animation: fadeIn var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .animate-aurora {
@@ -115,7 +115,7 @@
 }
 
 .animate-slideInRight {
-  animation: slideInRight 0.3s ease-out;
+  animation: slideInRight var(--motion-duration-base) var(--motion-ease-standard);
 }
 
 /* Gradient Flow Animation - 渐变流动效果 */
@@ -142,7 +142,7 @@
 @keyframes pageSlideIn {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(var(--motion-intensity-page-y));
   }
 
   to {
@@ -159,16 +159,16 @@
 
   to {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(calc(var(--motion-intensity-page-y) * -1));
   }
 }
 
 .animate-page-enter {
-  animation: pageSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: pageSlideIn var(--motion-duration-slow) var(--motion-ease-emphasized);
 }
 
 .animate-page-exit {
-  animation: pageSlideOut 0.3s ease-out forwards;
+  animation: pageSlideOut var(--motion-duration-base) var(--motion-ease-standard) forwards;
 }
 
 /* Shimmer effect for gradient text */

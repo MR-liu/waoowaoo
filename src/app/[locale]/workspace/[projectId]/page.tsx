@@ -251,7 +251,7 @@ export default function ProjectDetailPage() {
 
   if (isInitializing) {
     return (
-      <div className="glass-page min-h-screen">
+      <div className="glass-page glass-atmosphere min-h-screen">
         <Navbar />
         <main className="flex items-center justify-center h-[calc(100vh-64px)]">
           <div className="text-[var(--glass-text-secondary)]">{tc('loading')}</div>
@@ -263,9 +263,9 @@ export default function ProjectDetailPage() {
   // Error状态
   if (error || !project) {
     return (
-      <div className="glass-page min-h-screen">
+      <div className="glass-page glass-atmosphere min-h-screen">
         <Navbar />
-        <main className="container mx-auto px-4 py-8">
+        <main className="glass-shell px-2 sm:px-4 py-8">
           <div className="glass-surface p-6 text-center">
             <p className="text-[var(--glass-tone-danger-fg)] mb-4">{error || t('projectNotFound')}</p>
             <button
@@ -281,14 +281,14 @@ export default function ProjectDetailPage() {
   }
 
   return (
-    <div className="glass-page min-h-screen flex flex-col">
+    <div className="glass-page glass-atmosphere min-h-screen flex flex-col">
       <Navbar />
 
       {/* V3 UI: 浮动导航替代了旧的 Sidebar */}
 
       {/* 主内容区 - 占满全部宽度 */}
       <main className="flex-1 overflow-y-auto">
-        <div className="container mx-auto px-4 py-8">
+        <div className="glass-shell px-2 sm:px-4 py-8">
           {isGlobalAssetsView && project.novelPromotionData ? (
             // 全局资产视图（确保数据准备好）
             <div>

@@ -1,5 +1,5 @@
 {
-  "name": "waoowaoo",
+  "name": "foldx",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -122,6 +122,7 @@
     "cos-nodejs-sdk-v5": "^2.15.4",
     "express": "^5.2.1",
     "file-saver": "^2.0.5",
+    "framer-motion": "^12.34.3",
     "ioredis": "^5.9.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.575.0",

@@ -1,7 +1,7 @@
 import { context, SpanStatusCode, trace, type Attributes, type Span } from '@opentelemetry/api'
 import type { TaskTelemetryContextInput } from '@/lib/task/metrics'
 
-const tracer = trace.getTracer('waoowaoo.observability')
+const tracer = trace.getTracer('foldx.observability')
 
 type SpanAttributeValue = string | number | boolean | null | undefined
 
@@ -14,10 +14,10 @@ function normalizeAttributeValue(value: SpanAttributeValue): string | number | b
 
 function buildIdentityAttributes(input: TaskTelemetryContextInput): Attributes {
   return {
-    'waoowaoo.request_id': normalizeAttributeValue(input.requestId),
-    'waoowaoo.task_id': normalizeAttributeValue(input.taskId),
-    'waoowaoo.project_id': normalizeAttributeValue(input.projectId),
-    'waoowaoo.user_id': normalizeAttributeValue(input.userId),
+    'foldx.request_id': normalizeAttributeValue(input.requestId),
+    'foldx.task_id': normalizeAttributeValue(input.taskId),
+    'foldx.project_id': normalizeAttributeValue(input.projectId),
+    'foldx.user_id': normalizeAttributeValue(input.userId),
   }
 }
 

@@ -48,7 +48,7 @@ git push public release-public:main --force
 echo ""
 echo "=============================================="
 echo "✅ 开源版本发布成功！"
-echo "🔗 https://github.com/saturndec/waoowaoo"
+echo "🔗 https://github.com/saturndec/foldx"
 echo "=============================================="
 echo ""
 

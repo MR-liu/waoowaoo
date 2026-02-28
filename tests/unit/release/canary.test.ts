@@ -4,7 +4,7 @@ import { validateCanaryPlan, type CanaryPlan } from '@/lib/release/canary'
 describe('canary plan validation', () => {
   it('passes for strictly increasing canary steps ending at 100%', () => {
     const plan: CanaryPlan = {
-      service: 'waoowaoo-web',
+      service: 'foldx-web',
       versioning: 'immutable-image-tag',
       steps: [
         { trafficPercent: 5, holdMinutes: 10, entryCriteria: ['a'], rollbackCriteria: ['b'] },
@@ -18,7 +18,7 @@ describe('canary plan validation', () => {
 
   it('fails when steps are not increasing or final step is not 100%', () => {
     const plan: CanaryPlan = {
-      service: 'waoowaoo-web',
+      service: 'foldx-web',
       versioning: 'immutable-image-tag',
       steps: [
         { trafficPercent: 20, holdMinutes: 10, entryCriteria: ['a'], rollbackCriteria: ['b'] },

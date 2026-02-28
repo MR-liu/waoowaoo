@@ -1,16 +1,18 @@
 <p align="center">
-  <img src="public/banner.png" alt="waoowaoo" width="600">
+  <img src="public/banner.png" alt="fold-x" width="600">
 </p>
 
 <p align="center">
   <a href="#-quick-start">English</a> | <a href="#-快速开始">中文</a>
 </p>
 
-# waoowaoo AI 影视 Studio
+# fold-x AI 影视 Studio
 
 > ⚠️ **测试版声明**：本项目目前处于测试初期阶段，由于暂时只有我一个人开发，存在部分 bug 和不完善之处。我们正在快速迭代更新中，欢迎进群反馈问题和需求！
 >
 > ⚠️ **Beta Notice**: This project is in early beta. It's currently solo-developed, so bugs and rough edges exist. We're iterating fast — feel free to open an Issue!
+>
+> 🔒 **内部工具模式 / Internal Tool Mode**: 当前仅支持内部账号登录，不开放公开注册。
 
 <img width="1676" height="540" alt="chat" src="https://github.com/user-attachments/assets/30c6fcf6-b605-48da-a571-7b7aead3df8d" />
 
@@ -37,8 +39,8 @@ An AI-powered tool for creating short drama / comic videos — automatically gen
 **前提条件**：安装 [Docker Desktop](https://docs.docker.com/get-docker/)
 
 ```bash
-git clone https://github.com/saturndec/waoowaoo.git
-cd waoowaoo
+git clone https://github.com/saturndec/foldx.git
+cd foldx
 docker compose up -d
 ```
 
@@ -66,8 +68,8 @@ docker compose down && docker compose up -d --build
 **Prerequisites**: Install [Docker Desktop](https://docs.docker.com/get-docker/)
 
 ```bash
-git clone https://github.com/saturndec/waoowaoo.git
-cd waoowaoo
+git clone https://github.com/saturndec/foldx.git
+cd foldx
 docker compose up -d
 ```
 
@@ -112,10 +114,10 @@ After launching, go to **Settings** to configure your AI service API keys. A bui
 
 ## 🤝 反馈 / Feedback
 
-暂不接受 Pull Request，如有问题或建议，欢迎提交 [Issue](https://github.com/saturndec/waoowaoo/issues)！
+暂不接受 Pull Request，如有问题或建议，欢迎提交 [Issue](https://github.com/saturndec/foldx/issues)！
 
-Pull Requests are not accepted at this time. For bugs or suggestions, please open an [Issue](https://github.com/saturndec/waoowaoo/issues).
+Pull Requests are not accepted at this time. For bugs or suggestions, please open an [Issue](https://github.com/saturndec/foldx/issues).
 
 ---
 
-**Made with ❤️ by waoowaoo team**
+**Made with ❤️ by fold-x team**

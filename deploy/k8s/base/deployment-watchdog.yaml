@@ -1,34 +1,34 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: waoowaoo-watchdog
-  namespace: waoowaoo-prod
+  name: foldx-watchdog
+  namespace: foldx-prod
   labels:
-    app.kubernetes.io/name: waoowaoo
+    app.kubernetes.io/name: foldx
     app.kubernetes.io/component: watchdog
 spec:
   replicas: 1
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      app.kubernetes.io/name: waoowaoo
+      app.kubernetes.io/name: foldx
       app.kubernetes.io/component: watchdog
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: waoowaoo
+        app.kubernetes.io/name: foldx
         app.kubernetes.io/component: watchdog
     spec:
       containers:
         - name: watchdog
-          image: waoowaoo:latest
+          image: foldx:latest
           imagePullPolicy: IfNotPresent
           command: ["sh", "-c", "npm run start:watchdog"]
           envFrom:
             - configMapRef:
-                name: waoowaoo-app-config
+                name: foldx-app-config
             - secretRef:
-                name: waoowaoo-app-secret
+                name: foldx-app-secret
           resources:
             requests:
               cpu: "200m"

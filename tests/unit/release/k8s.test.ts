@@ -13,19 +13,19 @@ describe('k8s manifest validation', () => {
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: waoowaoo-web
+  name: foldx-web
 spec:
   selector:
     matchLabels:
-      app: waoowaoo-web
+      app: foldx-web
   template:
     metadata:
       labels:
-        app: waoowaoo-web
+        app: foldx-web
     spec:
       containers:
         - name: web
-          image: waoowaoo:latest
+          image: foldx:latest
       `,
     )
 
@@ -43,10 +43,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: waoowaoo-web
+  name: foldx-web
 spec:
   selector:
-    app: waoowaoo-web
+    app: foldx-web
   ports:
     - port: 80
       targetPort: 3000
@@ -68,15 +68,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: waoowaoo-web
+  name: foldx-web
 spec:
   selector:
     matchLabels:
-      app: waoowaoo-web
+      app: foldx-web
   template:
     metadata:
       labels:
-        app: waoowaoo-web
+        app: foldx-web
     spec:
       containers: []
       `,
@@ -96,12 +96,12 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: waoowaoo-web
+  name: foldx-web
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: waoowaoo-web
+    name: foldx-web
   minReplicas: 10
   maxReplicas: 2
       `,

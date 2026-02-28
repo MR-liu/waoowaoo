@@ -1,27 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: waoowaoo-web
-  namespace: waoowaoo-prod
+  name: foldx-web
+  namespace: foldx-prod
   labels:
-    app.kubernetes.io/name: waoowaoo
+    app.kubernetes.io/name: foldx
     app.kubernetes.io/component: web
 spec:
   replicas: 2
   revisionHistoryLimit: 5
   selector:
     matchLabels:
-      app.kubernetes.io/name: waoowaoo
+      app.kubernetes.io/name: foldx
       app.kubernetes.io/component: web
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: waoowaoo
+        app.kubernetes.io/name: foldx
         app.kubernetes.io/component: web
     spec:
       containers:
         - name: web
-          image: waoowaoo:latest
+          image: foldx:latest
           imagePullPolicy: IfNotPresent
           command: ["sh", "-c", "npm run start:next"]
           ports:
@@ -29,9 +29,9 @@ spec:
               name: http
           envFrom:
             - configMapRef:
-                name: waoowaoo-app-config
+                name: foldx-app-config
             - secretRef:
-                name: waoowaoo-app-secret
+                name: foldx-app-secret
           resources:
             requests:
               cpu: "500m"
