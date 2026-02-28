@@ -151,4 +151,74 @@ describe('api specific - novel character/location POST forwarding', () => {
     const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
     expect(res.status).toBe(401)
   })
+
+  it('character route returns structured trigger warning when background generation trigger fails', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('character trigger failed')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const mod = await import('@/app/api/novel-promotion/[projectId]/character/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/character',
+      method: 'POST',
+      body: {
+        name: 'Hero',
+        description: '冷静，黑发',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const body = await res.json() as {
+      success: boolean
+      triggerWarningCount: number
+      triggerWarnings: Array<{
+        code: string
+        target: string
+        detail: string
+      }>
+    }
+    expect(body.success).toBe(true)
+    expect(body.triggerWarningCount).toBe(1)
+    expect(body.triggerWarnings[0]).toEqual(expect.objectContaining({
+      code: 'BACKGROUND_TRIGGER_FAILED',
+      target: 'novel-promotion.generate-character-image',
+    }))
+    expect(body.triggerWarnings[0].detail).toContain('character trigger failed')
+  })
+
+  it('location route returns structured trigger warning when background generation returns non-ok status', async () => {
+    const fetchMock = vi.fn(async () => new Response('queue unavailable', { status: 502 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const mod = await import('@/app/api/novel-promotion/[projectId]/location/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/location',
+      method: 'POST',
+      body: {
+        name: 'Old Town',
+        description: '夜景老城',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(200)
+    const body = await res.json() as {
+      success: boolean
+      triggerWarningCount: number
+      triggerWarnings: Array<{
+        code: string
+        target: string
+        status?: number
+      }>
+    }
+    expect(body.success).toBe(true)
+    expect(body.triggerWarningCount).toBe(1)
+    expect(body.triggerWarnings[0]).toEqual(expect.objectContaining({
+      code: 'BACKGROUND_TRIGGER_FAILED',
+      target: 'novel-promotion.generate-image',
+      status: 502,
+    }))
+  })
 })

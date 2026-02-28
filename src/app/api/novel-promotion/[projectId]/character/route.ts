@@ -1,9 +1,9 @@
-import { logError as _ulogError } from '@/lib/logging/core'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireProjectAuth, requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { encodeImageUrls } from '@/lib/contracts/image-urls-contract'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { triggerBackgroundJsonRequest, type BackgroundTriggerWarning } from '@/lib/api/background-trigger'
 import { PRIMARY_APPEARANCE_INDEX } from '@/lib/constants'
 import { resolveTaskLocale } from '@/lib/task/resolve-locale'
 
@@ -128,49 +128,62 @@ export const POST = apiHandler(async (
       previousImageUrls: encodeImageUrls([])}
   })
 
+  const triggerWarnings: BackgroundTriggerWarning[] = []
   if (generateFromReference && allReferenceImages.length > 0) {
     const { getBaseUrl } = await import('@/lib/env')
     const baseUrl = getBaseUrl()
-    fetch(`${baseUrl}/api/novel-promotion/${projectId}/reference-to-character`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cookie': request.headers.get('cookie') || '',
-        ...(acceptLanguage ? { 'Accept-Language': acceptLanguage } : {})
+    const triggerWarning = await triggerBackgroundJsonRequest({
+      url: `${baseUrl}/api/novel-promotion/${projectId}/reference-to-character`,
+      init: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': request.headers.get('cookie') || '',
+          ...(acceptLanguage ? { 'Accept-Language': acceptLanguage } : {})
+        },
+        body: JSON.stringify({
+          referenceImageUrls: allReferenceImages,
+          characterName: name.trim(),
+          characterId: character.id,
+          appearanceId: appearance.id,
+          isBackgroundJob: true,
+          artStyle: artStyle || 'american-comic',
+          customDescription: customDescription || undefined,  // 🔥 传递自定义描述（文生图模式）
+          locale: taskLocale || undefined,
+        })
       },
-      body: JSON.stringify({
-        referenceImageUrls: allReferenceImages,
-        characterName: name.trim(),
-        characterId: character.id,
-        appearanceId: appearance.id,
-        isBackgroundJob: true,
-        artStyle: artStyle || 'american-comic',
-        customDescription: customDescription || undefined,  // 🔥 传递自定义描述（文生图模式）
-        locale: taskLocale || undefined,
-      })
-    }).catch(err => {
-      _ulogError('[Character API] 参考图后台生成任务触发失败:', err)
+      target: 'novel-promotion.reference-to-character',
+      logPrefix: '[Character API] 参考图后台生成任务触发失败',
     })
+    if (triggerWarning) {
+      triggerWarnings.push(triggerWarning)
+    }
   } else if (description?.trim()) {
     // 普通创建：触发后台图片生成
     const { getBaseUrl } = await import('@/lib/env')
     const baseUrl = getBaseUrl()
-    fetch(`${baseUrl}/api/novel-promotion/${projectId}/generate-character-image`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cookie': request.headers.get('cookie') || '',
-        ...(acceptLanguage ? { 'Accept-Language': acceptLanguage } : {})
+    const triggerWarning = await triggerBackgroundJsonRequest({
+      url: `${baseUrl}/api/novel-promotion/${projectId}/generate-character-image`,
+      init: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': request.headers.get('cookie') || '',
+          ...(acceptLanguage ? { 'Accept-Language': acceptLanguage } : {})
+        },
+        body: JSON.stringify({
+          characterId: character.id,
+          appearanceIndex: PRIMARY_APPEARANCE_INDEX,
+          artStyle: artStyle || 'american-comic',
+          locale: taskLocale || undefined,
+        })
       },
-      body: JSON.stringify({
-        characterId: character.id,
-        appearanceIndex: PRIMARY_APPEARANCE_INDEX,
-        artStyle: artStyle || 'american-comic',
-        locale: taskLocale || undefined,
-      })
-    }).catch(err => {
-      _ulogError('[Character API] 后台图片生成任务触发失败:', err)
+      target: 'novel-promotion.generate-character-image',
+      logPrefix: '[Character API] 后台图片生成任务触发失败',
     })
+    if (triggerWarning) {
+      triggerWarnings.push(triggerWarning)
+    }
   }
 
   // 返回包含形象的角色数据
@@ -179,5 +192,10 @@ export const POST = apiHandler(async (
     include: { appearances: true }
   })
 
-  return NextResponse.json({ success: true, character: characterWithAppearances })
+  return NextResponse.json({
+    success: true,
+    character: characterWithAppearances,
+    triggerWarningCount: triggerWarnings.length,
+    triggerWarnings,
+  })
 })

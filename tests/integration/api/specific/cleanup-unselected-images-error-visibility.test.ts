@@ -69,8 +69,24 @@ describe('api specific - cleanup-unselected-images error visibility', () => {
 
     const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
     expect(res.status).toBe(200)
-    const body = await res.json() as { success: boolean; deletedCount: number }
+    const body = await res.json() as {
+      success: boolean
+      deletedCount: number
+      cleanupWarningCount: number
+      cleanupWarnings: Array<{
+        code: string
+        targetType: string
+        targetId: string
+        detail: string
+      }>
+    }
     expect(body.success).toBe(true)
+    expect(body.cleanupWarningCount).toBe(1)
+    expect(body.cleanupWarnings[0]).toEqual(expect.objectContaining({
+      code: 'COS_DELETE_FAILED',
+      targetType: 'characterAppearance',
+      targetId: 'appearance-1',
+    }))
     expect(logWarnMock).toHaveBeenCalledWith(
       expect.stringContaining('[Cleanup Unselected] 删除角色候选图失败 appearanceId=appearance-1'),
     )

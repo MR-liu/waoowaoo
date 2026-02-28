@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   RunStreamEvent,
 } from '@/lib/novel-promotion/run-stream/types'
+import { logWarn as _ulogWarn } from '@/lib/logging/core'
 import { type SSEEvent } from '@/lib/task/types'
 import {
   mapTaskSSEEventToRunEvents,
@@ -162,10 +163,19 @@ export function useRunStreamState<TParams>(options: UseRunStreamStateOptions<TPa
 
     let cancelled = false
     void (async () => {
-      const activeTaskId = await resolveActiveTaskIdRef.current?.({
-        projectId,
-        storageScopeKey,
-      }).catch(() => null)
+      let activeTaskId: string | null = null
+      try {
+        activeTaskId = await (resolveActiveTaskIdRef.current?.({
+          projectId,
+          storageScopeKey,
+        }) || Promise.resolve(null))
+      } catch (error) {
+        _ulogWarn('[RunStream] active task probe failed', {
+          projectId,
+          storageScopeKey: storageScopeKey || null,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
       if (cancelled || !activeTaskId) return
       const now = Date.now()
       setRunState((prev) => {
@@ -295,7 +305,20 @@ export function useRunStreamState<TParams>(options: UseRunStreamStateOptions<TPa
       })
       void fetch(`/api/tasks/${runningTaskId}`, {
         method: 'DELETE',
-      }).catch(() => null)
+      })
+        .then((response) => {
+          if (response.ok) return
+          _ulogWarn('[RunStream] stop task request failed', {
+            taskId: runningTaskId,
+            status: response.status,
+          })
+        })
+        .catch((error) => {
+          _ulogWarn('[RunStream] stop task request failed', {
+            taskId: runningTaskId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        })
     }
     abortRef.current?.abort()
     abortRef.current = null

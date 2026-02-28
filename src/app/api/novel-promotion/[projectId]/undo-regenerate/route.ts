@@ -66,6 +66,13 @@ interface UndoRegenerateDb extends UndoRegenerateTx {
     $transaction<T>(fn: (tx: UndoRegenerateTx) => Promise<T>): Promise<T>
 }
 
+type UndoCleanupWarning = {
+    code: 'COS_DELETE_FAILED'
+    targetType: 'characterAppearance' | 'locationImage' | 'panel'
+    targetId: string
+    detail: string
+}
+
 export const POST = apiHandler(async (
     request: NextRequest,
     context: { params: Promise<{ projectId: string }> }
@@ -124,6 +131,8 @@ async function undoCharacterRegenerate(db: UndoRegenerateDb, appearanceId: strin
         throw new ApiError('INVALID_PARAMS')
     }
 
+    const cleanupWarnings: UndoCleanupWarning[] = []
+
     // 删除当前图片
     const currentImageUrls = decodeImageUrlsFromDb(appearance.imageUrls, 'characterAppearance.imageUrls')
     for (const key of currentImageUrls) {
@@ -134,6 +143,12 @@ async function undoCharacterRegenerate(db: UndoRegenerateDb, appearanceId: strin
             } catch (error: unknown) {
                 const message = error instanceof Error ? error.message : String(error)
                 _ulogError(`[undo-regenerate] 删除角色当前图片失败 appearanceId=${appearanceId} key=${key} error=${message}`)
+                cleanupWarnings.push({
+                    code: 'COS_DELETE_FAILED',
+                    targetType: 'characterAppearance',
+                    targetId: appearanceId,
+                    detail: `key=${key}; ${message}`,
+                })
             }
         }
     }
@@ -162,7 +177,9 @@ async function undoCharacterRegenerate(db: UndoRegenerateDb, appearanceId: strin
 
     return NextResponse.json({
         success: true,
-        message: '已撤回到上一版本（图片和描述词）'
+        message: '已撤回到上一版本（图片和描述词）',
+        cleanupWarningCount: cleanupWarnings.length,
+        cleanupWarnings,
     })
 }
 
@@ -195,6 +212,12 @@ async function undoLocationRegenerate(db: UndoRegenerateDb, locationId: string) 
                     } catch (error: unknown) {
                         const message = error instanceof Error ? error.message : String(error)
                         _ulogError(`[undo-regenerate] 删除场景当前图片失败 locationId=${locationId} imageId=${img.id} error=${message}`)
+                        cleanupWarnings.push({
+                            code: 'COS_DELETE_FAILED',
+                            targetType: 'locationImage',
+                            targetId: img.id,
+                            detail: message,
+                        })
                     }
                 }
                 // 恢复上一版本（图片 + 描述词）
@@ -214,7 +237,9 @@ async function undoLocationRegenerate(db: UndoRegenerateDb, locationId: string) 
 
     return NextResponse.json({
         success: true,
-        message: '已撤回到上一版本（图片和描述词）'
+        message: '已撤回到上一版本（图片和描述词）',
+        cleanupWarningCount: cleanupWarnings.length,
+        cleanupWarnings,
     })
 }
 
@@ -222,6 +247,8 @@ async function undoLocationRegenerate(db: UndoRegenerateDb, locationId: string) 
  * 撤回 Panel 镜头图片到上一版本
  */
 async function undoPanelRegenerate(db: UndoRegenerateDb, panelId: string) {
+    const cleanupWarnings: UndoCleanupWarning[] = []
+
     // 获取镜头
     const panel = await db.novelPromotionPanel.findUnique({
         where: { id: panelId }
@@ -244,6 +271,12 @@ async function undoPanelRegenerate(db: UndoRegenerateDb, panelId: string) {
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error)
             _ulogError(`[undo-regenerate] 删除镜头当前图片失败 panelId=${panelId} error=${message}`)
+            cleanupWarnings.push({
+                code: 'COS_DELETE_FAILED',
+                targetType: 'panel',
+                targetId: panelId,
+                detail: message,
+            })
         }
     }
 
@@ -259,6 +292,8 @@ async function undoPanelRegenerate(db: UndoRegenerateDb, panelId: string) {
 
     return NextResponse.json({
         success: true,
-        message: '镜头图片已撤回到上一版本'
+        message: '镜头图片已撤回到上一版本',
+        cleanupWarningCount: cleanupWarnings.length,
+        cleanupWarnings,
     })
 }

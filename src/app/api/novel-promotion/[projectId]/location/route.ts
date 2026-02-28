@@ -1,9 +1,9 @@
-import { logError as _ulogError } from '@/lib/logging/core'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { removeLocationPromptSuffix } from '@/lib/constants'
 import { requireProjectAuth, requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { triggerBackgroundJsonRequest, type BackgroundTriggerWarning } from '@/lib/api/background-trigger'
 import { resolveTaskLocale } from '@/lib/task/resolve-locale'
 
 // 删除场景（级联删除关联的图片记录）
@@ -90,23 +90,30 @@ export const POST = apiHandler(async (
   })
 
   // 触发后台图片生成
+  const triggerWarnings: BackgroundTriggerWarning[] = []
   const { getBaseUrl } = await import('@/lib/env')
   const baseUrl = getBaseUrl()
-  fetch(`${baseUrl}/api/novel-promotion/${projectId}/generate-image`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Cookie': request.headers.get('cookie') || '',
-      ...(acceptLanguage ? { 'Accept-Language': acceptLanguage } : {}),
+  const triggerWarning = await triggerBackgroundJsonRequest({
+    url: `${baseUrl}/api/novel-promotion/${projectId}/generate-image`,
+    init: {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': request.headers.get('cookie') || '',
+        ...(acceptLanguage ? { 'Accept-Language': acceptLanguage } : {}),
+      },
+      body: JSON.stringify({
+        type: 'location',
+        id: location.id,
+        locale: taskLocale || undefined,
+      })
     },
-    body: JSON.stringify({
-      type: 'location',
-      id: location.id,
-      locale: taskLocale || undefined,
-    })
-  }).catch(err => {
-    _ulogError('[Location API] 后台图片生成任务触发失败:', err)
+    target: 'novel-promotion.generate-image',
+    logPrefix: '[Location API] 后台图片生成任务触发失败',
   })
+  if (triggerWarning) {
+    triggerWarnings.push(triggerWarning)
+  }
 
   // 返回包含图片的场景数据
   const locationWithImages = await prisma.novelPromotionLocation.findUnique({
@@ -114,7 +121,12 @@ export const POST = apiHandler(async (
     include: { images: true }
   })
 
-  return NextResponse.json({ success: true, location: locationWithImages })
+  return NextResponse.json({
+    success: true,
+    location: locationWithImages,
+    triggerWarningCount: triggerWarnings.length,
+    triggerWarnings,
+  })
 })
 
 // 更新场景（名字或图片描述）

@@ -75,7 +75,6 @@ export function createWorkerLLMStreamCallbacks(
     ensureActiveOrThrow(stage)
     scheduleActiveProbe()
     publishQueue = publishQueue
-      .catch(() => undefined)
       .then(async () => {
         ensureActiveOrThrow(stage)
         await assertTaskActive(job, stage)
@@ -244,7 +243,7 @@ export function createWorkerLLMStreamCallbacks(
       })
     },
     async flush() {
-      await publishQueue.catch(() => undefined)
+      await publishQueue
       if (terminatedError) {
         throw terminatedError
       }

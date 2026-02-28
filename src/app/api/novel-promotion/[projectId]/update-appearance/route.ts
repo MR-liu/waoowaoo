@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
-import { logWarn as _ulogWarn } from '@/lib/logging/core'
+import { decodeDescriptionsStrict, DescriptionsContractError } from '@/lib/contracts/descriptions-contract'
 
 export const POST = apiHandler(async (
   request: NextRequest,
@@ -32,14 +32,19 @@ export const POST = apiHandler(async (
 
   const trimmedDescription = newDescription.trim()
 
-  // 解析 descriptions JSON
+  // 解析 descriptions JSON（严格契约，禁止静默回退掩盖脏数据）
   let descriptions: string[] = []
-  if (appearance.descriptions) {
+  if (typeof appearance.descriptions === 'string') {
     try {
-      descriptions = JSON.parse(appearance.descriptions)
+      descriptions = decodeDescriptionsStrict(appearance.descriptions, 'characterAppearance.descriptions')
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error)
-      _ulogWarn(`[Update Appearance] descriptions JSON parse failed appearanceId=${appearance.id} error=${message}`)
+      if (error instanceof DescriptionsContractError) {
+        throw new ApiError('INTERNAL_ERROR', {
+          message: `character appearance descriptions contract invalid: ${error.message}`,
+          appearanceId: appearance.id,
+        })
+      }
+      throw error
     }
   }
   if (descriptions.length === 0) {

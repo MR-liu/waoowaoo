@@ -1,7 +1,6 @@
-import { logError as _ulogError } from '@/lib/logging/core'
 /**
  * 本地文件服务API
- * 
+ *
  * 仅在 STORAGE_TYPE=local 时使用
  * 提供本地文件的HTTP访问服务
  */
@@ -9,6 +8,7 @@ import { logError as _ulogError } from '@/lib/logging/core'
 import { NextRequest, NextResponse } from 'next/server'
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import { apiHandler, ApiError } from '@/lib/api-errors'
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || './data/uploads'
 
@@ -34,12 +34,11 @@ function getMimeType(filePath: string): string {
     return MIME_TYPES[ext] || 'application/octet-stream'
 }
 
-export async function GET(
-    request: NextRequest,
-    { params }: { params: Promise<{ path: string[] }> }
-) {
-    try {
-        const { path: pathSegments } = await params
+export const GET = apiHandler(async (
+    _request: NextRequest,
+    context: { params: Promise<{ path: string[] }> }
+) => {
+        const { path: pathSegments } = await context.params
 
         // 解码路径（因为URL编码过）
         const decodedPath = decodeURIComponent(pathSegments.join('/'))
@@ -50,12 +49,19 @@ export async function GET(
         const uploadDirPath = path.normalize(path.join(process.cwd(), UPLOAD_DIR))
 
         if (!normalizedPath.startsWith(uploadDirPath + path.sep)) {
-            _ulogError(`[Files API] 路径逃逸尝试: ${decodedPath}`)
-            return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+            throw new ApiError('FORBIDDEN', { message: 'Access denied' })
         }
 
         // 读取文件
-        const buffer = await fs.readFile(filePath)
+        const buffer = await fs.readFile(filePath).catch((error: unknown) => {
+            const code = typeof error === 'object' && error !== null && 'code' in error
+                ? (error as { code?: unknown }).code
+                : undefined
+            if (code === 'ENOENT') {
+                throw new ApiError('NOT_FOUND', { message: 'File not found' })
+            }
+            throw new ApiError('INTERNAL_ERROR', { message: 'Internal server error' })
+        })
         const mimeType = getMimeType(filePath)
 
         // 返回文件内容
@@ -67,16 +73,4 @@ export async function GET(
                 'Cache-Control': 'public, max-age=31536000', // 1年缓存
             },
         })
-
-    } catch (error: unknown) {
-        const code = typeof error === 'object' && error !== null && 'code' in error
-            ? (error as { code?: unknown }).code
-            : undefined
-        if (code === 'ENOENT') {
-            return NextResponse.json({ error: 'File not found' }, { status: 404 })
-        }
-
-        _ulogError('[Files API] 读取文件失败:', error)
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-    }
-}
+})

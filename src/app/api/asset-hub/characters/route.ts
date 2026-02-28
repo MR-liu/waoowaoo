@@ -1,8 +1,8 @@
-import { logError as _ulogError } from '@/lib/logging/core'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
 import { ApiError, apiHandler } from '@/lib/api-errors'
+import { triggerBackgroundJsonRequest, type BackgroundTriggerWarning } from '@/lib/api/background-trigger'
 import { attachMediaFieldsToGlobalCharacter } from '@/lib/media/attach'
 import { resolveMediaRefFromLegacyValue } from '@/lib/media/service'
 import { PRIMARY_APPEARANCE_INDEX } from '@/lib/constants'
@@ -105,29 +105,36 @@ export const POST = apiHandler(async (request: NextRequest) => {
             previousImageUrls: encodeImageUrls([])}
     })
 
+    const triggerWarnings: BackgroundTriggerWarning[] = []
     if (generateFromReference && allReferenceImages.length > 0) {
         const { getBaseUrl } = await import('@/lib/env')
         const baseUrl = getBaseUrl()
-        fetch(`${baseUrl}/api/asset-hub/reference-to-character`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Cookie': request.headers.get('cookie') || '',
-                ...(acceptLanguage ? { 'Accept-Language': acceptLanguage } : {})
+        const triggerWarning = await triggerBackgroundJsonRequest({
+            url: `${baseUrl}/api/asset-hub/reference-to-character`,
+            init: {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Cookie': request.headers.get('cookie') || '',
+                    ...(acceptLanguage ? { 'Accept-Language': acceptLanguage } : {})
+                },
+                body: JSON.stringify({
+                    referenceImageUrls: allReferenceImages,
+                    characterName: name.trim(),
+                    characterId: character.id,
+                    appearanceId: appearance.id,
+                    isBackgroundJob: true,
+                    artStyle: artStyle || 'american-comic',
+                    customDescription: customDescription || undefined,
+                    locale: taskLocale || undefined,
+                })
             },
-            body: JSON.stringify({
-                referenceImageUrls: allReferenceImages,
-                characterName: name.trim(),
-                characterId: character.id,
-                appearanceId: appearance.id,
-                isBackgroundJob: true,
-                artStyle: artStyle || 'american-comic',
-                customDescription: customDescription || undefined,
-                locale: taskLocale || undefined,
-            })
-        }).catch(err => {
-            _ulogError('[Characters API] 后台生成任务触发失败:', err)
+            target: 'asset-hub.reference-to-character',
+            logPrefix: '[Characters API] 后台生成任务触发失败',
         })
+        if (triggerWarning) {
+            triggerWarnings.push(triggerWarning)
+        }
     }
 
     const characterWithAppearances = await prisma.globalCharacter.findUnique({
@@ -139,5 +146,10 @@ export const POST = apiHandler(async (request: NextRequest) => {
         ? await attachMediaFieldsToGlobalCharacter(characterWithAppearances)
         : characterWithAppearances
 
-    return NextResponse.json({ success: true, character: withMedia })
+    return NextResponse.json({
+        success: true,
+        character: withMedia,
+        triggerWarningCount: triggerWarnings.length,
+        triggerWarnings,
+    })
 })

@@ -1,8 +1,8 @@
-import { logError as _ulogError } from '@/lib/logging/core'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
 import { ApiError, apiHandler } from '@/lib/api-errors'
+import { triggerBackgroundJsonRequest, type BackgroundTriggerWarning } from '@/lib/api/background-trigger'
 import { attachMediaFieldsToGlobalLocation } from '@/lib/media/attach'
 import { resolveTaskLocale } from '@/lib/task/resolve-locale'
 
@@ -83,30 +83,42 @@ export const POST = apiHandler(async (request: NextRequest) => {
         include: { images: true }
     })
 
+    const triggerWarnings: BackgroundTriggerWarning[] = []
     if (summary?.trim()) {
         const { getBaseUrl } = await import('@/lib/env')
         const baseUrl = getBaseUrl()
-        fetch(`${baseUrl}/api/asset-hub/generate-image`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Cookie': request.headers.get('cookie') || '',
-                ...(acceptLanguage ? { 'Accept-Language': acceptLanguage } : {})
+        const triggerWarning = await triggerBackgroundJsonRequest({
+            url: `${baseUrl}/api/asset-hub/generate-image`,
+            init: {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Cookie': request.headers.get('cookie') || '',
+                    ...(acceptLanguage ? { 'Accept-Language': acceptLanguage } : {})
+                },
+                body: JSON.stringify({
+                    type: 'location',
+                    id: location.id,
+                    artStyle: artStyle || 'american-comic',
+                    locale: taskLocale || undefined,
+                })
             },
-            body: JSON.stringify({
-                type: 'location',
-                id: location.id,
-                artStyle: artStyle || 'american-comic',
-                locale: taskLocale || undefined,
-            })
-        }).catch(err => {
-            _ulogError('[Locations API] 后台生成任务触发失败:', err)
+            target: 'asset-hub.generate-image',
+            logPrefix: '[Locations API] 后台生成任务触发失败',
         })
+        if (triggerWarning) {
+            triggerWarnings.push(triggerWarning)
+        }
     }
 
     const withMedia = locationWithImages
         ? await attachMediaFieldsToGlobalLocation(locationWithImages)
         : locationWithImages
 
-    return NextResponse.json({ success: true, location: withMedia })
+    return NextResponse.json({
+        success: true,
+        location: withMedia,
+        triggerWarningCount: triggerWarnings.length,
+        triggerWarnings,
+    })
 })

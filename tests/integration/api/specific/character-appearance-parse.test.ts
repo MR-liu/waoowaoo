@@ -15,46 +15,39 @@ const prismaMock = vi.hoisted(() => ({
   },
 }))
 
-const resolveStorageKeyMock = vi.hoisted(() => vi.fn())
-const deleteCOSObjectMock = vi.hoisted(() => vi.fn())
-
 vi.mock('@/lib/api-auth', () => authMock)
 vi.mock('@/lib/prisma', () => ({ prisma: prismaMock }))
-vi.mock('@/lib/media/service', () => ({
-  resolveStorageKeyFromMediaValue: resolveStorageKeyMock,
-}))
-vi.mock('@/lib/cos', () => ({
-  deleteCOSObject: deleteCOSObjectMock,
-}))
 
-describe('api specific - character confirm-selection parse contract', () => {
+describe('api specific - character appearance parse contract', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     prismaMock.characterAppearance.findUnique.mockResolvedValue({
       id: 'appearance-1',
-      selectedIndex: 0,
-      imageUrls: JSON.stringify(['cos/selected.png', 'cos/unselected.png']),
+      characterId: 'character-1',
       descriptions: 'broken-json',
-      description: 'legacy description',
-      changeReason: '初始形象',
-      character: { name: 'Hero' },
+      character: {
+        novelPromotionProject: {
+          projectId: 'project-1',
+        },
+      },
     })
-    resolveStorageKeyMock.mockResolvedValue('cos/unselected.png')
-    deleteCOSObjectMock.mockResolvedValue(undefined)
   })
 
   it('returns INTERNAL_ERROR when descriptions json is invalid', async () => {
-    const mod = await import('@/app/api/novel-promotion/[projectId]/character/confirm-selection/route')
+    const mod = await import('@/app/api/novel-promotion/[projectId]/character/appearance/route')
     const req = buildMockRequest({
-      path: '/api/novel-promotion/project-1/character/confirm-selection',
-      method: 'POST',
+      path: '/api/novel-promotion/project-1/character/appearance',
+      method: 'PATCH',
       body: {
         characterId: 'character-1',
         appearanceId: 'appearance-1',
+        description: 'new description',
       },
     })
 
-    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    const res = await mod.PATCH(req, {
+      params: Promise.resolve({ projectId: 'project-1' }),
+    })
     expect(res.status).toBe(500)
     const body = await res.json() as {
       success: boolean

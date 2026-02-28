@@ -21,8 +21,30 @@ type WaitTaskOptions = {
   onTaskUpdate?: (task: TaskSnapshot) => void
 }
 
+type ReadResponseJsonResult = {
+  payload: unknown | null
+  parseError: string | null
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message
+  return String(error)
+}
+
+async function readResponseJsonSafely(response: Response, context: string): Promise<ReadResponseJsonResult> {
+  try {
+    const payload = await response.clone().json()
+    return { payload, parseError: null }
+  } catch (error) {
+    return {
+      payload: null,
+      parseError: `${context}: invalid JSON response (${toErrorMessage(error)})`,
+    }
+  }
 }
 
 export function isAsyncTaskResponse(data: unknown): data is { async: true; taskId: string } {
@@ -46,12 +68,18 @@ export async function waitForTaskResult(taskId: string, options: WaitTaskOptions
       method: 'GET',
       cache: 'no-store',
     })
+    const snapshotBody = await readResponseJsonSafely(response, `task snapshot ${taskId}`)
     if (!response.ok) {
-      const errorPayload = await response.json().catch(() => null)
+      const errorPayload = snapshotBody.payload
+      if (snapshotBody.parseError) {
+        throw new Error(`Task fetch failed: ${taskId}; ${snapshotBody.parseError}`)
+      }
       throw new Error(resolveTaskErrorMessage(errorPayload, `Task fetch failed: ${taskId}`))
     }
-
-    const payload = (await response.json()) as TaskSnapshotResponse
+    if (snapshotBody.parseError) {
+      throw new Error(snapshotBody.parseError)
+    }
+    const payload = (snapshotBody.payload || {}) as TaskSnapshotResponse
     const task = payload.task
     if (!task) {
       throw new Error(`Task not found: ${taskId}`)
@@ -74,7 +102,11 @@ export async function waitForTaskResult(taskId: string, options: WaitTaskOptions
 }
 
 export async function resolveTaskResponse<T = Record<string, unknown>>(response: Response, options?: WaitTaskOptions) {
-  const data = await response.json().catch(() => null)
+  const responseBody = await readResponseJsonSafely(response, 'resolve task response')
+  if (responseBody.parseError) {
+    throw new Error(responseBody.parseError)
+  }
+  const data = responseBody.payload
   if (!response.ok) {
     throw new Error(resolveTaskErrorMessage(data, 'Request failed'))
   }

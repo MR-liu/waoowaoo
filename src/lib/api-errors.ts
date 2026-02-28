@@ -186,7 +186,6 @@ function buildInternalLLMStreamCallbacks(req: NextRequest): InternalLLMStreamCal
   ) => {
     const nextPayload = withDefaultFlowAndStep(payload, step)
     publishQueue = publishQueue
-      .catch(() => undefined)
       .then(async () => {
         await publishTaskEvent({
           taskId,
@@ -209,7 +208,6 @@ function buildInternalLLMStreamCallbacks(req: NextRequest): InternalLLMStreamCal
   ) => {
     const nextPayload = withDefaultFlowAndStep(payload, step)
     publishQueue = publishQueue
-      .catch(() => undefined)
       .then(async () => {
         await publishTaskStreamEvent({
           taskId,
@@ -321,7 +319,7 @@ function buildInternalLLMStreamCallbacks(req: NextRequest): InternalLLMStreamCal
       }, false, activeStepMeta)
     },
     async flush() {
-      await publishQueue.catch(() => undefined)
+      await publishQueue
     },
   }
 }
@@ -487,10 +485,16 @@ export function apiHandler<TParams extends RouteParams>(handler: ApiHandler<TPar
           },
         })
         const streamCallbacks = buildInternalLLMStreamCallbacks(req)
+        let streamFlushAttempted = false
+        const flushStreamCallbacks = async () => {
+          if (!streamCallbacks?.flush) return
+          streamFlushAttempted = true
+          await streamCallbacks.flush()
+        }
 
         try {
           const response = await withInternalLLMStreamCallbacks(streamCallbacks, async () => await handler(req, ctx))
-          await streamCallbacks?.flush?.()
+          await flushStreamCallbacks()
           response.headers.set('x-request-id', requestId)
 
           logger.debug({
@@ -521,8 +525,42 @@ export function apiHandler<TParams extends RouteParams>(handler: ApiHandler<TPar
 
           return response
         } catch (error: unknown) {
-          await streamCallbacks?.flush?.()
-          const apiError = normalizeError(error)
+          let normalizedInput: unknown = error
+          if (!streamFlushAttempted) {
+            try {
+              await flushStreamCallbacks()
+            } catch (flushError: unknown) {
+              logger.error({
+                action: 'api.internal_stream.flush_failed',
+                message: 'failed to flush internal stream callbacks after request error',
+                durationMs: Date.now() - startedAt,
+                details: {
+                  method: req.method,
+                  path: req.nextUrl.pathname,
+                  requestErrorType: error instanceof Error ? error.constructor.name : typeof error,
+                  flushErrorType: flushError instanceof Error ? flushError.constructor.name : typeof flushError,
+                },
+                error:
+                  flushError instanceof Error
+                    ? {
+                        name: flushError.name,
+                        message: flushError.message,
+                        stack: flushError.stack,
+                        code: typeof (flushError as Error & { code?: unknown }).code === 'string'
+                          ? ((flushError as Error & { code?: string }).code as string)
+                          : undefined,
+                      }
+                    : undefined,
+              })
+              if (error instanceof ApiError) {
+                normalizedInput = new ApiError(error.code, {
+                  ...(error.details || {}),
+                  internalStreamFlushError: flushError instanceof Error ? flushError.message : String(flushError),
+                })
+              }
+            }
+          }
+          const apiError = normalizeError(normalizedInput)
           const errorType = error instanceof Error ? error.constructor.name : typeof error
           logger.error({
             action: 'api.request.error',

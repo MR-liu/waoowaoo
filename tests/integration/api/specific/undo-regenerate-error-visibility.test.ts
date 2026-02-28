@@ -61,6 +61,23 @@ describe('api specific - undo-regenerate error visibility', () => {
 
     const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
     expect(res.status).toBe(200)
+    const body = await res.json() as {
+      success: boolean
+      cleanupWarningCount: number
+      cleanupWarnings: Array<{
+        code: string
+        targetType: string
+        targetId: string
+        detail: string
+      }>
+    }
+    expect(body.success).toBe(true)
+    expect(body.cleanupWarningCount).toBe(1)
+    expect(body.cleanupWarnings[0]).toEqual(expect.objectContaining({
+      code: 'COS_DELETE_FAILED',
+      targetType: 'panel',
+      targetId: 'panel-1',
+    }))
     expect(logErrorMock).toHaveBeenCalledWith(
       expect.stringContaining('[undo-regenerate] 删除镜头当前图片失败 panelId=panel-1'),
     )

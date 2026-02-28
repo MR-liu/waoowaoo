@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { deleteCOSObject } from '@/lib/cos'
 import { decodeImageUrlsFromDb, encodeImageUrls } from '@/lib/contracts/image-urls-contract'
+import { decodeDescriptionsStrict, DescriptionsContractError } from '@/lib/contracts/descriptions-contract'
 import { resolveStorageKeyFromMediaValue } from '@/lib/media/service'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
@@ -116,12 +117,20 @@ export const PATCH = apiHandler(async (
   // 更新描述
   const trimmedDesc = description.trim()
 
-  // 更新 descriptions 数组
+  // 更新 descriptions 数组（严格契约，禁止静默吞错）
   let descriptions: string[] = []
-  try {
-    descriptions = appearance.descriptions ? JSON.parse(appearance.descriptions) : []
-  } catch {
-    descriptions = []
+  if (typeof appearance.descriptions === 'string') {
+    try {
+      descriptions = decodeDescriptionsStrict(appearance.descriptions, 'characterAppearance.descriptions')
+    } catch (error: unknown) {
+      if (error instanceof DescriptionsContractError) {
+        throw new ApiError('INTERNAL_ERROR', {
+          message: `character appearance descriptions contract invalid: ${error.message}`,
+          appearanceId,
+        })
+      }
+      throw error
+    }
   }
 
   // 如果指定了 descriptionIndex，更新对应位置；否则更新/添加第一个

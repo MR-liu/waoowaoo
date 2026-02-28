@@ -107,4 +107,38 @@ describe('api specific - locations POST forwarding to generate-image task', () =
     const res = await mod.POST(req)
     expect(res.status).toBe(401)
   })
+
+  it('returns structured trigger warning when background generate-image returns non-ok status', async () => {
+    const fetchMock = vi.fn(async () => new Response('upstream unavailable', { status: 503 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const mod = await import('@/app/api/asset-hub/locations/route')
+    const req = buildMockRequest({
+      path: '/api/asset-hub/locations',
+      method: 'POST',
+      body: {
+        name: 'Old Town',
+        summary: '夜景老城',
+      },
+    })
+
+    const res = await mod.POST(req)
+    expect(res.status).toBe(200)
+    const body = await res.json() as {
+      success: boolean
+      triggerWarningCount: number
+      triggerWarnings: Array<{
+        code: string
+        target: string
+        status?: number
+      }>
+    }
+    expect(body.success).toBe(true)
+    expect(body.triggerWarningCount).toBe(1)
+    expect(body.triggerWarnings[0]).toEqual(expect.objectContaining({
+      code: 'BACKGROUND_TRIGGER_FAILED',
+      target: 'asset-hub.generate-image',
+      status: 503,
+    }))
+  })
 })

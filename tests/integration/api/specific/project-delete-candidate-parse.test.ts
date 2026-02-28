@@ -82,8 +82,19 @@ describe('api specific - project delete candidate parse error visibility', () =>
 
     const res = await mod.DELETE(req, { params: Promise.resolve({ projectId: 'project-1' }) })
     expect(res.status).toBe(200)
-    const body = await res.json() as { success: boolean; cosFilesDeleted: number; cosFilesFailed: number }
+    const body = await res.json() as {
+      success: boolean
+      cosFilesDeleted: number
+      cosFilesFailed: number
+      cleanupWarningCount: number
+      cleanupWarnings: Array<{ code: string; target: string; detail: string }>
+    }
     expect(body.success).toBe(true)
+    expect(body.cleanupWarningCount).toBe(1)
+    expect(body.cleanupWarnings[0]).toEqual(expect.objectContaining({
+      code: 'PROJECT_DELETE_CANDIDATE_PARSE_FAILED',
+      target: 'storyboard:storyboard-1',
+    }))
     expect(logErrorMock).toHaveBeenCalledWith(
       expect.stringContaining('[Project project-1] 解析候选图失败 storyboardId=storyboard-1'),
     )

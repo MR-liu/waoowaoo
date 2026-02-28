@@ -2,6 +2,7 @@
 
 import { useRunStreamState, type RunResult } from './useRunStreamState'
 import { TASK_STATUS, TASK_TYPE } from '@/lib/task/types'
+import { readResponseJsonSafely } from './run-stream/response-json'
 
 export type StoryToScriptRunParams = {
   episodeId: string
@@ -44,7 +45,13 @@ export function useStoryToScriptRunStream({ projectId, episodeId }: UseStoryToSc
         cache: 'no-store',
       })
       if (!response.ok) return null
-      const data = await response.json().catch(() => null)
+      const responseBody = await readResponseJsonSafely({
+        response,
+        context: 'story-to-script active task query payload',
+        requestUrl: `/api/tasks?${search.toString()}`,
+      })
+      if (responseBody.parseError) return null
+      const data = responseBody.payload
       const tasks = data && typeof data === 'object' && Array.isArray((data as { tasks?: unknown[] }).tasks)
         ? (data as { tasks: Array<{ id?: unknown }> }).tasks
         : []

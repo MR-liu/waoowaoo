@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
 import { encodeImageUrls } from '@/lib/contracts/image-urls-contract'
+import { decodeDescriptionsStrict, DescriptionsContractError } from '@/lib/contracts/descriptions-contract'
 import { ApiError, apiHandler } from '@/lib/api-errors'
-import { logWarn as _ulogWarn } from '@/lib/logging/core'
 
 // 更新形象描述
 export const PATCH = apiHandler(async (
@@ -41,12 +41,20 @@ export const PATCH = apiHandler(async (
     if (description !== undefined) {
         const trimmedDescription = description.trim()
         let descriptions: string[] = []
-        if (appearance.descriptions) {
+        if (typeof appearance.descriptions === 'string') {
             try {
-                descriptions = JSON.parse(appearance.descriptions)
+                descriptions = decodeDescriptionsStrict(
+                    appearance.descriptions,
+                    'globalCharacterAppearance.descriptions',
+                )
             } catch (error: unknown) {
-                const message = error instanceof Error ? error.message : String(error)
-                _ulogWarn(`[AssetHub Appearance] descriptions JSON parse failed appearanceId=${appearance.id} error=${message}`)
+                if (error instanceof DescriptionsContractError) {
+                    throw new ApiError('INTERNAL_ERROR', {
+                        message: `global character appearance descriptions contract invalid: ${error.message}`,
+                        appearanceId: appearance.id,
+                    })
+                }
+                throw error
             }
         }
         if (descriptions.length === 0) {

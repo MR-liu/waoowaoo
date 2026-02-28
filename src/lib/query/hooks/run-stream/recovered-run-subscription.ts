@@ -2,6 +2,7 @@ import type { RunStreamEvent } from '@/lib/novel-promotion/run-stream/types'
 import { logWarn as _ulogWarn } from '@/lib/logging/core'
 import { TASK_SSE_EVENT_TYPE, type SSEEvent } from '@/lib/task/types'
 import { mapTaskSSEEventToRunEvents, toTerminalRunResult } from './event-parser'
+import { readResponseJsonSafely } from './response-json'
 import type { RunResult } from './types'
 
 const POLL_INTERVAL_MS = 1500
@@ -36,12 +37,19 @@ async function replayTaskLifecycleEvents(args: {
   onTerminal: () => void
 }) {
   try {
-    const response = await fetch(`/api/tasks/${args.taskId}?includeEvents=1&eventsLimit=${REPLAY_EVENTS_LIMIT}`, {
+    const replayUrl = `/api/tasks/${args.taskId}?includeEvents=1&eventsLimit=${REPLAY_EVENTS_LIMIT}`
+    const response = await fetch(replayUrl, {
       method: 'GET',
       cache: 'no-store',
     })
     if (!response.ok) return
-    const payload = toObject(await response.json().catch(() => null))
+    const replayBody = await readResponseJsonSafely({
+      response,
+      context: 'recovered run replay payload',
+      requestUrl: replayUrl,
+    })
+    if (replayBody.parseError) return
+    const payload = toObject(replayBody.payload)
     const events = asEventArray(payload.events)
     for (const taskEvent of events) {
       const runEvents = mapTaskSSEEventToRunEvents(taskEvent)
@@ -155,7 +163,11 @@ function subscribeRecoveredRunInternal(args: SubscribeRecoveredRunArgs): Cleanup
     let taskEvent: SSEEvent
     try {
       taskEvent = JSON.parse(rawData) as SSEEvent
-    } catch {
+    } catch (error) {
+      _ulogWarn('[RunStream] invalid sse event payload during recovery', {
+        taskId: args.taskId,
+        error: error instanceof Error ? error.message : String(error),
+      })
       return
     }
     if (!taskEvent || taskEvent.taskId !== args.taskId) return

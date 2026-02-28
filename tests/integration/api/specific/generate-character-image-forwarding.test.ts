@@ -89,4 +89,69 @@ describe('api specific - generate-character-image forwarding', () => {
     const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
     expect(res.status).toBe(401)
   })
+
+  it('returns explicit GENERATION_FAILED details when downstream generate-image fails', async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({ code: 'UPSTREAM_BUSY', error: 'upstream queue busy' }),
+        { status: 503 },
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const mod = await import('@/app/api/novel-promotion/[projectId]/generate-character-image/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/generate-character-image',
+      method: 'POST',
+      body: {
+        characterId: 'character-1',
+        appearanceId: 'appearance-1',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(500)
+    const body = await res.json() as {
+      success: boolean
+      error: {
+        code: string
+        message: string
+        details: { upstreamStatus?: number; upstreamCode?: string }
+      }
+    }
+    expect(body.success).toBe(false)
+    expect(body.error.code).toBe('GENERATION_FAILED')
+    expect(body.error.message).toContain('upstream queue busy')
+    expect(body.error.details.upstreamStatus).toBe(503)
+    expect(body.error.details.upstreamCode).toBe('UPSTREAM_BUSY')
+  })
+
+  it('returns GENERATION_FAILED with parse detail when downstream failure body is not valid json', async () => {
+    const fetchMock = vi.fn(async () => new Response('upstream busy', { status: 503 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const mod = await import('@/app/api/novel-promotion/[projectId]/generate-character-image/route')
+    const req = buildMockRequest({
+      path: '/api/novel-promotion/project-1/generate-character-image',
+      method: 'POST',
+      body: {
+        characterId: 'character-1',
+        appearanceId: 'appearance-1',
+      },
+    })
+
+    const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
+    expect(res.status).toBe(500)
+    const body = await res.json() as {
+      success: boolean
+      error: {
+        code: string
+        details: { upstreamStatus?: number; upstreamParseError?: string }
+      }
+    }
+    expect(body.success).toBe(false)
+    expect(body.error.code).toBe('GENERATION_FAILED')
+    expect(body.error.details.upstreamStatus).toBe(503)
+    expect(body.error.details.upstreamParseError).toContain('invalid JSON response')
+  })
 })

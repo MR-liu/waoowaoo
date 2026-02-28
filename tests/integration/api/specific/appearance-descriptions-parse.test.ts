@@ -25,24 +25,15 @@ const prismaMock = vi.hoisted(() => ({
   },
 }))
 
-const logWarnMock = vi.hoisted(() => vi.fn())
-
 vi.mock('@/lib/api-auth', () => authMock)
 vi.mock('@/lib/prisma', () => ({ prisma: prismaMock }))
-vi.mock('@/lib/logging/core', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/logging/core')>()
-  return {
-    ...actual,
-    logWarn: logWarnMock,
-  }
-})
 
-describe('api specific - appearance description parse fallback', () => {
+describe('api specific - appearance description parse contract', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('novel update-appearance logs parse failure and falls back to single description', async () => {
+  it('novel update-appearance returns INTERNAL_ERROR when descriptions json is invalid', async () => {
     prismaMock.characterAppearance.findUnique.mockResolvedValueOnce({
       id: 'appearance-1',
       descriptions: 'not-json',
@@ -61,18 +52,23 @@ describe('api specific - appearance description parse fallback', () => {
     })
 
     const res = await mod.POST(req, { params: Promise.resolve({ projectId: 'project-1' }) })
-    expect(res.status).toBe(200)
-    expect(logWarnMock).toHaveBeenCalledWith(expect.stringContaining('[Update Appearance] descriptions JSON parse failed'))
-    expect(prismaMock.characterAppearance.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'appearance-1' },
-      data: {
-        descriptions: JSON.stringify(['new description']),
-        description: 'new description',
-      },
-    }))
+    expect(res.status).toBe(500)
+    const body = await res.json() as {
+      success: boolean
+      error: {
+        code: string
+        message: string
+        details: { appearanceId?: string }
+      }
+    }
+    expect(body.success).toBe(false)
+    expect(body.error.code).toBe('INTERNAL_ERROR')
+    expect(body.error.message).toContain('descriptions contract invalid')
+    expect(body.error.details.appearanceId).toBe('appearance-1')
+    expect(prismaMock.characterAppearance.update).not.toHaveBeenCalled()
   })
 
-  it('asset-hub appearance PATCH logs parse failure and falls back to single description', async () => {
+  it('asset-hub appearance PATCH returns INTERNAL_ERROR when descriptions json is invalid', async () => {
     prismaMock.globalCharacter.findUnique.mockResolvedValueOnce({
       id: 'character-1',
       userId: 'user-1',
@@ -95,14 +91,19 @@ describe('api specific - appearance description parse fallback', () => {
     const res = await mod.PATCH(req, {
       params: Promise.resolve({ characterId: 'character-1', appearanceIndex: '0' }),
     })
-    expect(res.status).toBe(200)
-    expect(logWarnMock).toHaveBeenCalledWith(expect.stringContaining('[AssetHub Appearance] descriptions JSON parse failed'))
-    expect(prismaMock.globalCharacterAppearance.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'g-appearance-1' },
-      data: expect.objectContaining({
-        descriptions: JSON.stringify(['updated description']),
-        description: 'updated description',
-      }),
-    }))
+    expect(res.status).toBe(500)
+    const body = await res.json() as {
+      success: boolean
+      error: {
+        code: string
+        message: string
+        details: { appearanceId?: string }
+      }
+    }
+    expect(body.success).toBe(false)
+    expect(body.error.code).toBe('INTERNAL_ERROR')
+    expect(body.error.message).toContain('descriptions contract invalid')
+    expect(body.error.details.appearanceId).toBe('g-appearance-1')
+    expect(prismaMock.globalCharacterAppearance.update).not.toHaveBeenCalled()
   })
 })

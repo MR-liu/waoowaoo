@@ -1,9 +1,9 @@
-import { logError as _ulogError } from '@/lib/logging/core'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { runSideEffectWithWarning, type SideEffectWarning } from '@/lib/api/side-effect-warning'
 import { attachMediaFieldsToProject } from '@/lib/media/attach'
 import { resolveMediaRefFromLegacyValue } from '@/lib/media/service'
 
@@ -47,16 +47,30 @@ export const GET = apiHandler(async (
     throw new ApiError('NOT_FOUND')
   }
 
-  // 更新最后编辑的剧集ID（异步，不阻塞响应）
-  prisma.novelPromotionProject.update({
-    where: { projectId },
-    data: { lastEpisodeId: episodeId }
-  }).catch(err => _ulogError('更新 lastEpisodeId 失败:', err))
+  const updateWarnings: SideEffectWarning[] = []
+  const lastEpisodeWarning = await runSideEffectWithWarning({
+    code: 'PROJECT_LAST_EPISODE_UPDATE_FAILED',
+    target: 'novelPromotionProject.lastEpisodeId',
+    logPrefix: '[Episode API] 更新 lastEpisodeId 失败',
+    run: async () => {
+      await prisma.novelPromotionProject.update({
+        where: { projectId },
+        data: { lastEpisodeId: episodeId }
+      })
+    },
+  })
+  if (lastEpisodeWarning) {
+    updateWarnings.push(lastEpisodeWarning)
+  }
 
   // 转换为稳定媒体 URL（并保留兼容字段）
   const episodeWithSignedUrls = await attachMediaFieldsToProject(episode)
 
-  return NextResponse.json({ episode: episodeWithSignedUrls })
+  return NextResponse.json({
+    episode: episodeWithSignedUrls,
+    updateWarningCount: updateWarnings.length,
+    updateWarnings,
+  })
 })
 
 /**

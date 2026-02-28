@@ -22,7 +22,10 @@ function writeProjectLogLine(line: string, projectId: string | undefined, module
   }
   void fileWriterModulePromise
     .then((mod) => mod.writeLogToProjectFile(line, projectId, moduleName))
-    .catch(() => undefined)
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[logging.core] write project log line failed: ${message}`)
+    })
 }
 
 function serializeError(error: unknown): ErrorFields | undefined {

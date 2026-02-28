@@ -8,6 +8,7 @@ import sharp from 'sharp'
 import { initializeFonts, createLabelSVG } from '@/lib/fonts'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { runSideEffectWithWarning, type SideEffectWarning } from '@/lib/api/side-effect-warning'
 
 /**
  * POST /api/novel-promotion/[projectId]/update-asset-label
@@ -38,6 +39,7 @@ export const POST = apiHandler(async (
   }
 
   if (type === 'character') {
+    const labelWarnings: SideEffectWarning[] = []
     // 获取角色的所有形象
     const character = await prisma.novelPromotionCharacter.findUnique({
       where: { id: id },
@@ -56,7 +58,10 @@ export const POST = apiHandler(async (
       }
 
       // 获取图片 URLs
-      let imageUrls = decodeImageUrlsFromDb(appearance.imageUrls, 'characterAppearance.imageUrls')
+      let imageUrls =
+        typeof appearance.imageUrls === 'string'
+          ? decodeImageUrlsFromDb(appearance.imageUrls, 'characterAppearance.imageUrls')
+          : []
       if (imageUrls.length === 0 && appearance.imageUrl) {
         imageUrls = [appearance.imageUrl]
       }
@@ -68,12 +73,20 @@ export const POST = apiHandler(async (
       const newImageUrls: string[] = await Promise.all(
         imageUrls.map(async (url, i) => {
           if (!url) return ''
-          try {
-            return await updateImageLabel(url, newLabelText)
-          } catch (e) {
-            _ulogError(`Failed to update label for image ${i}:`, e)
-            return url // 保留原 URL
+          let nextUrl = url
+          const warning = await runSideEffectWithWarning({
+            code: 'NOVEL_ASSET_LABEL_UPDATE_FAILED',
+            target: `characterAppearance:${appearance.id}:image:${i}`,
+            logPrefix: '[Update Asset Label API] 角色图片标签更新失败',
+            run: async () => {
+              nextUrl = await updateImageLabel(url, newLabelText)
+            },
+          })
+          if (warning) {
+            labelWarnings.push(warning)
+            _ulogError(`Failed to update label for image ${i}:`, warning.detail)
           }
+          return nextUrl
         })
       )
 
@@ -92,9 +105,15 @@ export const POST = apiHandler(async (
     })
 
     const results = await Promise.all(updatePromises)
-    return NextResponse.json({ success: true, results: results.filter(r => r !== null) })
+    return NextResponse.json({
+      success: true,
+      results: results.filter(r => r !== null),
+      labelWarningCount: labelWarnings.length,
+      labelWarnings,
+    })
 
   } else if (type === 'location') {
+    const labelWarnings: SideEffectWarning[] = []
     // 获取场景
     const location = await prisma.novelPromotionLocation.findUnique({
       where: { id: id },
@@ -110,27 +129,41 @@ export const POST = apiHandler(async (
       if (!image.imageUrl) return null
 
       const newLabelText = newName
-      try {
-        const newImageUrl = await updateImageLabel(
-          image.imageUrl,
-          newLabelText
-        )
-
-        // 更新数据库
-        await prisma.locationImage.update({
-          where: { id: image.id },
-          data: { imageUrl: newImageUrl }
-        })
-
-        return { imageIndex: image.imageIndex, imageUrl: newImageUrl }
-      } catch (e) {
-        _ulogError(`Failed to update label for location image ${image.imageIndex}:`, e)
+      let newImageUrl: string | null = null
+      const warning = await runSideEffectWithWarning({
+        code: 'NOVEL_ASSET_LABEL_UPDATE_FAILED',
+        target: `locationImage:${image.id}`,
+        logPrefix: '[Update Asset Label API] 场景图片标签更新失败',
+        run: async () => {
+          newImageUrl = await updateImageLabel(
+            image.imageUrl as string,
+            newLabelText,
+          )
+        },
+      })
+      if (warning) {
+        labelWarnings.push(warning)
+        _ulogError(`Failed to update label for location image ${image.imageIndex}:`, warning.detail)
         return null
       }
+      if (!newImageUrl) return null
+
+      // 更新数据库
+      await prisma.locationImage.update({
+        where: { id: image.id },
+        data: { imageUrl: newImageUrl }
+      })
+
+      return { imageIndex: image.imageIndex, imageUrl: newImageUrl }
     })
 
     const results = await Promise.all(updatePromises)
-    return NextResponse.json({ success: true, results: results.filter(r => r !== null) })
+    return NextResponse.json({
+      success: true,
+      results: results.filter(r => r !== null),
+      labelWarningCount: labelWarnings.length,
+      labelWarnings,
+    })
   }
 
   throw new ApiError('INVALID_PARAMS')

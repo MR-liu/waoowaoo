@@ -8,9 +8,14 @@ import {
 } from '../task-target-overlay'
 import {
     invalidateQueryTemplates,
+    readResponseJsonRecord,
     requestJsonWithError,
     requestTaskResponseWithError,
 } from './mutation-shared'
+
+function appendParseError(message: string, parseError: string | null): string {
+    return parseError ? `${message}; ${parseError}` : message
+}
 
 export function useRegenerateProjectPanelImage(projectId: string) {
     const queryClient = useQueryClient()
@@ -22,16 +27,20 @@ export function useRegenerateProjectPanelImage(projectId: string) {
                 body: JSON.stringify({ panelId, count: count ?? 1 }),
             })
             if (!res.ok) {
-                const error = await res.json().catch(() => ({}))
+                const parsed = await readResponseJsonRecord(res, 'regenerate panel image error payload')
+                const error = parsed.payload
                 if (res.status === 402) throw new Error('余额不足，请充值后继续使用')
                 if (res.status === 400 && String(error?.error || '').includes('敏感')) {
                     throw new Error(resolveTaskErrorMessage(error, '提示词包含敏感内容'))
                 }
                 if (res.status === 429 || error?.code === 'RATE_LIMIT') {
-                    const retryAfter = error?.retryAfter || 60
+                    const retryAfter =
+                        typeof error.retryAfter === 'number' && Number.isFinite(error.retryAfter)
+                            ? error.retryAfter
+                            : 60
                     throw new Error(`API 配额超限，请等待 ${retryAfter} 秒后重试`)
                 }
-                throw new Error(resolveTaskErrorMessage(error, '重新生成失败'))
+                throw new Error(appendParseError(resolveTaskErrorMessage(error, '重新生成失败'), parsed.parseError))
             }
             return res.json()
         },
@@ -98,8 +107,8 @@ export function useDownloadProjectImages(projectId: string) {
         mutationFn: async ({ episodeId }: { episodeId: string }) => {
             const response = await fetch(`/api/novel-promotion/${projectId}/download-images?episodeId=${episodeId}`)
             if (!response.ok) {
-                const error = await response.json().catch(() => ({}))
-                throw new Error(resolveTaskErrorMessage(error, '下载失败'))
+                const parsed = await readResponseJsonRecord(response, 'download project images error payload')
+                throw new Error(appendParseError(resolveTaskErrorMessage(parsed.payload, '下载失败'), parsed.parseError))
             }
             return response.blob()
         },

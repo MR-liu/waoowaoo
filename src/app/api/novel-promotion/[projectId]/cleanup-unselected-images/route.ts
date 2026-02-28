@@ -7,6 +7,13 @@ import { resolveStorageKeyFromMediaValue } from '@/lib/media/service'
 import { requireProjectAuth, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler } from '@/lib/api-errors'
 
+type CleanupWarning = {
+  code: 'COS_DELETE_FAILED' | 'CLEANUP_ITEM_FAILED'
+  targetType: 'characterAppearance' | 'locationImage'
+  targetId: string
+  detail: string
+}
+
 /**
  * POST - 清理未选中的图片
  * 在用户确认资产进入下一步时调用
@@ -23,6 +30,7 @@ export const POST = apiHandler(async (
   const { novelData } = authResult
 
   let deletedCount = 0
+  const cleanupWarnings: CleanupWarning[] = []
 
   // 1. 清理角色形象的未选中图片
   const appearances = await prisma.characterAppearance.findMany({
@@ -50,6 +58,12 @@ export const POST = apiHandler(async (
           } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error)
             _ulogWarn(`[Cleanup Unselected] 删除角色候选图失败 appearanceId=${appearance.id} index=${i} error=${message}`)
+            cleanupWarnings.push({
+              code: 'COS_DELETE_FAILED',
+              targetType: 'characterAppearance',
+              targetId: appearance.id,
+              detail: `index=${i}; ${message}`,
+            })
           }
         }
       }
@@ -67,6 +81,12 @@ export const POST = apiHandler(async (
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
       _ulogWarn(`[Cleanup Unselected] 处理角色形象失败 appearanceId=${appearance.id} error=${message}`)
+      cleanupWarnings.push({
+        code: 'CLEANUP_ITEM_FAILED',
+        targetType: 'characterAppearance',
+        targetId: appearance.id,
+        detail: message,
+      })
     }
   }
 
@@ -95,6 +115,12 @@ export const POST = apiHandler(async (
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error)
           _ulogWarn(`[Cleanup Unselected] 删除场景候选图失败 locationId=${location.id} imageId=${img.id} error=${message}`)
+          cleanupWarnings.push({
+            code: 'COS_DELETE_FAILED',
+            targetType: 'locationImage',
+            targetId: img.id,
+            detail: message,
+          })
         }
 
         // 删除图片记录
@@ -114,5 +140,10 @@ export const POST = apiHandler(async (
     })
   }
 
-  return NextResponse.json({ success: true, deletedCount })
+  return NextResponse.json({
+    success: true,
+    deletedCount,
+    cleanupWarningCount: cleanupWarnings.length,
+    cleanupWarnings,
+  })
 })

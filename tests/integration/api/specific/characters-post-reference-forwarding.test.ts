@@ -114,4 +114,41 @@ describe('api specific - characters POST forwarding to reference task', () => {
     const res = await mod.POST(req)
     expect(res.status).toBe(401)
   })
+
+  it('returns structured trigger warning when background reference trigger fails', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('trigger network failed')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const mod = await import('@/app/api/asset-hub/characters/route')
+    const req = buildMockRequest({
+      path: '/api/asset-hub/characters',
+      method: 'POST',
+      body: {
+        name: 'Hero',
+        generateFromReference: true,
+        referenceImageUrl: 'https://example.com/ref.png',
+      },
+    })
+
+    const res = await mod.POST(req)
+    expect(res.status).toBe(200)
+    const body = await res.json() as {
+      success: boolean
+      triggerWarningCount: number
+      triggerWarnings: Array<{
+        code: string
+        target: string
+        detail: string
+      }>
+    }
+    expect(body.success).toBe(true)
+    expect(body.triggerWarningCount).toBe(1)
+    expect(body.triggerWarnings[0]).toEqual(expect.objectContaining({
+      code: 'BACKGROUND_TRIGGER_FAILED',
+      target: 'asset-hub.reference-to-character',
+    }))
+    expect(body.triggerWarnings[0].detail).toContain('trigger network failed')
+  })
 })

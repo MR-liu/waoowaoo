@@ -8,6 +8,7 @@ import sharp from 'sharp'
 import { initializeFonts, createLabelSVG } from '@/lib/fonts'
 import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { runSideEffectWithWarning, type SideEffectWarning } from '@/lib/api/side-effect-warning'
 
 /**
  * POST /api/asset-hub/update-asset-label
@@ -28,6 +29,7 @@ export const POST = apiHandler(async (request: NextRequest) => {
     }
 
     if (type === 'character') {
+        const labelWarnings: SideEffectWarning[] = []
         const character = await prisma.globalCharacter.findUnique({
             where: { id },
             include: { appearances: true },
@@ -42,7 +44,10 @@ export const POST = apiHandler(async (request: NextRequest) => {
                 return null
             }
 
-            let imageUrls = decodeImageUrlsFromDb(appearance.imageUrls, 'globalCharacterAppearance.imageUrls')
+            let imageUrls =
+                typeof appearance.imageUrls === 'string'
+                    ? decodeImageUrlsFromDb(appearance.imageUrls, 'globalCharacterAppearance.imageUrls')
+                    : []
             if (imageUrls.length === 0 && appearance.imageUrl) {
                 imageUrls = [appearance.imageUrl]
             }
@@ -52,12 +57,20 @@ export const POST = apiHandler(async (request: NextRequest) => {
             const newImageUrls: string[] = await Promise.all(
                 imageUrls.map(async (url, i) => {
                     if (!url) return ''
-                    try {
-                        return await updateImageLabel(url, newLabelText)
-                    } catch (e) {
-                        _ulogError(`Failed to update label for global character image ${i}:`, e)
-                        return url
+                    let nextUrl = url
+                    const warning = await runSideEffectWithWarning({
+                        code: 'ASSET_HUB_LABEL_UPDATE_FAILED',
+                        target: `globalCharacterAppearance:${appearance.id}:image:${i}`,
+                        logPrefix: '[AssetHub Update Label API] 角色图片标签更新失败',
+                        run: async () => {
+                            nextUrl = await updateImageLabel(url, newLabelText)
+                        },
+                    })
+                    if (warning) {
+                        labelWarnings.push(warning)
+                        _ulogError(`Failed to update label for global character image ${i}:`, warning.detail)
                     }
+                    return nextUrl
                 })
             )
 
@@ -75,10 +88,16 @@ export const POST = apiHandler(async (request: NextRequest) => {
         })
 
         const results = await Promise.all(updatePromises)
-        return NextResponse.json({ success: true, results: results.filter((r) => r !== null) })
+        return NextResponse.json({
+            success: true,
+            results: results.filter((r) => r !== null),
+            labelWarningCount: labelWarnings.length,
+            labelWarnings,
+        })
     }
 
     if (type === 'location') {
+        const labelWarnings: SideEffectWarning[] = []
         const location = await prisma.globalLocation.findUnique({
             where: { id },
             include: { images: true },
@@ -91,23 +110,37 @@ export const POST = apiHandler(async (request: NextRequest) => {
         const updatePromises = location.images.map(async (image) => {
             if (!image.imageUrl) return null
 
-            try {
-                const newImageUrl = await updateImageLabel(image.imageUrl, newName)
-
-                await prisma.globalLocationImage.update({
-                    where: { id: image.id },
-                    data: { imageUrl: newImageUrl },
-                })
-
-                return { imageIndex: image.imageIndex, imageUrl: newImageUrl }
-            } catch (e) {
-                _ulogError(`Failed to update label for global location image ${image.imageIndex}:`, e)
+            let newImageUrl: string | null = null
+            const warning = await runSideEffectWithWarning({
+                code: 'ASSET_HUB_LABEL_UPDATE_FAILED',
+                target: `globalLocationImage:${image.id}`,
+                logPrefix: '[AssetHub Update Label API] 场景图片标签更新失败',
+                run: async () => {
+                    newImageUrl = await updateImageLabel(image.imageUrl as string, newName)
+                },
+            })
+            if (warning) {
+                labelWarnings.push(warning)
+                _ulogError(`Failed to update label for global location image ${image.imageIndex}:`, warning.detail)
                 return null
             }
+            if (!newImageUrl) return null
+
+            await prisma.globalLocationImage.update({
+                where: { id: image.id },
+                data: { imageUrl: newImageUrl },
+            })
+
+            return { imageIndex: image.imageIndex, imageUrl: newImageUrl }
         })
 
         const results = await Promise.all(updatePromises)
-        return NextResponse.json({ success: true, results: results.filter((r) => r !== null) })
+        return NextResponse.json({
+            success: true,
+            results: results.filter((r) => r !== null),
+            labelWarningCount: labelWarnings.length,
+            labelWarnings,
+        })
     }
 
     throw new ApiError('INVALID_PARAMS')

@@ -6,6 +6,7 @@ import { resolveStorageKeyFromMediaValue } from '@/lib/media/service'
 import { logProjectAction } from '@/lib/logging/semantic'
 import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { runSideEffectWithWarning, type SideEffectWarning } from '@/lib/api/side-effect-warning'
 
 // GET - 获取项目详情
 export const GET = apiHandler(async (
@@ -34,17 +35,31 @@ export const GET = apiHandler(async (
     throw new ApiError('FORBIDDEN')
   }
 
-  // 更新最近访问时间（异步，不阻塞响应）
-  prisma.project.update({
-    where: { id: projectId },
-    data: { lastAccessedAt: new Date() }
-  }).catch(err => _ulogError('更新访问时间失败:', err))
+  const updateWarnings: SideEffectWarning[] = []
+  const lastAccessWarning = await runSideEffectWithWarning({
+    code: 'PROJECT_LAST_ACCESSED_UPDATE_FAILED',
+    target: 'project.lastAccessedAt',
+    logPrefix: '[Projects API] 更新访问时间失败',
+    run: async () => {
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { lastAccessedAt: new Date() }
+      })
+    },
+  })
+  if (lastAccessWarning) {
+    updateWarnings.push(lastAccessWarning)
+  }
 
   // 这个API只返回基础项目信息
   // 模式特定的数据应该通过各自的API获取（如 /api/novel-promotion/[projectId]）
   const projectWithSignedUrls = addSignedUrlsToProject(project)
 
-  return NextResponse.json({ project: projectWithSignedUrls })
+  return NextResponse.json({
+    project: projectWithSignedUrls,
+    updateWarningCount: updateWarnings.length,
+    updateWarnings,
+  })
 })
 
 // PATCH - 更新项目配置
@@ -93,8 +108,12 @@ export const PATCH = apiHandler(async (
 /**
  * 收集项目的所有COS文件Key
  */
-async function collectProjectCOSKeys(projectId: string): Promise<string[]> {
+async function collectProjectCOSKeys(projectId: string): Promise<{
+  keys: string[]
+  cleanupWarnings: SideEffectWarning[]
+}> {
   const keys: string[] = []
+  const cleanupWarnings: SideEffectWarning[] = []
 
   // 获取 NovelPromotionProject
   const novelPromotion = await prisma.novelPromotionProject.findUnique({
@@ -125,7 +144,9 @@ async function collectProjectCOSKeys(projectId: string): Promise<string[]> {
     }
   })
 
-  if (!novelPromotion) return keys
+  if (!novelPromotion) {
+    return { keys, cleanupWarnings }
+  }
 
   // 1. 收集角色形象图片
   for (const character of novelPromotion.characters) {
@@ -166,6 +187,11 @@ async function collectProjectCOSKeys(projectId: string): Promise<string[]> {
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error)
           _ulogError(`[Project ${projectId}] 解析候选图失败 storyboardId=${storyboard.id} error=${message}`)
+          cleanupWarnings.push({
+            code: 'PROJECT_DELETE_CANDIDATE_PARSE_FAILED',
+            target: `storyboard:${storyboard.id}`,
+            detail: message,
+          })
         }
       }
 
@@ -181,7 +207,7 @@ async function collectProjectCOSKeys(projectId: string): Promise<string[]> {
   }
 
   _ulogInfo(`[Project ${projectId}] 收集到 ${keys.length} 个 COS 文件待删除`)
-  return keys
+  return { keys, cleanupWarnings }
 }
 
 // DELETE - 删除项目（同时清理COS文件）
@@ -210,7 +236,8 @@ export const DELETE = apiHandler(async (
 
   // 1. 先收集所有 COS 文件 Key
   _ulogInfo(`[DELETE] 开始删除项目: ${project.name} (${projectId})`)
-  const cosKeys = await collectProjectCOSKeys(projectId)
+  const cleanupResult = await collectProjectCOSKeys(projectId)
+  const { keys: cosKeys, cleanupWarnings } = cleanupResult
 
   // 2. 批量删除 COS 文件
   let cosResult = { success: 0, failed: 0 }
@@ -243,6 +270,8 @@ export const DELETE = apiHandler(async (
   return NextResponse.json({
     success: true,
     cosFilesDeleted: cosResult.success,
-    cosFilesFailed: cosResult.failed
+    cosFilesFailed: cosResult.failed,
+    cleanupWarningCount: cleanupWarnings.length,
+    cleanupWarnings,
   })
 })

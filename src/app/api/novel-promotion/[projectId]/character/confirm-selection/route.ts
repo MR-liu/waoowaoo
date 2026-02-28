@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { deleteCOSObject } from '@/lib/cos'
 import { decodeImageUrlsFromDb, encodeImageUrls } from '@/lib/contracts/image-urls-contract'
+import { decodeDescriptionsStrict, DescriptionsContractError } from '@/lib/contracts/descriptions-contract'
 import { resolveStorageKeyFromMediaValue } from '@/lib/media/service'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
@@ -85,12 +86,17 @@ export const POST = apiHandler(async (
 
   // 同样处理 descriptions，只保留选中的描述
   let descriptions: string[] = []
-  if (appearance.descriptions) {
+  if (typeof appearance.descriptions === 'string') {
     try {
-      descriptions = JSON.parse(appearance.descriptions)
+      descriptions = decodeDescriptionsStrict(appearance.descriptions, 'characterAppearance.descriptions')
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error)
-      _ulogWarn(`[Character Confirm Selection] descriptions JSON parse failed appearanceId=${appearance.id} error=${message}`)
+      if (error instanceof DescriptionsContractError) {
+        throw new ApiError('INTERNAL_ERROR', {
+          message: `character appearance descriptions contract invalid: ${error.message}`,
+          appearanceId: appearance.id,
+        })
+      }
+      throw error
     }
   }
   const selectedDescription = descriptions[selectedIndex] || appearance.description || ''

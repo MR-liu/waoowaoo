@@ -8,6 +8,7 @@ import {
   toObject,
   toTerminalRunResult,
 } from './event-parser'
+import { readResponseJsonSafely } from './response-json'
 import { streamSSEBody } from './run-stream-sse-body'
 import type { RunResult } from './types'
 
@@ -33,6 +34,11 @@ function buildFailedResult(runId: string, errorMessage: string): RunResult {
     payload: null,
     errorMessage,
   }
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message
+  return String(error)
 }
 
 async function waitExternalTaskTerminal(args: {
@@ -269,12 +275,23 @@ export async function executeRunRequest(args: RunRequestExecutorArgs): Promise<R
     })
 
     if (!response.ok) {
-      const jsonPayload = await response.clone().json().catch(() => null)
+      const errorBody = await readResponseJsonSafely({
+        response,
+        context: 'run request error payload',
+        requestUrl: args.endpointUrl,
+        requestMethod: 'POST',
+      })
+      const jsonPayload = errorBody.payload
       if (jsonPayload && typeof jsonPayload === 'object') {
         throw new Error(resolveTaskErrorMessage(jsonPayload as Record<string, unknown>, `HTTP ${response.status}`))
       }
-      const message = await response.text().catch(() => '')
-      throw new Error(message || `HTTP ${response.status}`)
+      let textBody = ''
+      try {
+        textBody = await response.text()
+      } catch (error) {
+        throw new Error(`failed to read error response text: ${toErrorMessage(error)}`)
+      }
+      throw new Error(textBody || errorBody.parseError || `HTTP ${response.status}`)
     }
 
     const contentType = response.headers.get('content-type') || ''
@@ -284,7 +301,16 @@ export async function executeRunRequest(args: RunRequestExecutorArgs): Promise<R
         applyAndCapture: args.applyAndCapture,
       })
     } else {
-      const data = await response.json().catch(() => null)
+      const successBody = await readResponseJsonSafely({
+        response,
+        context: 'run request success payload',
+        requestUrl: args.endpointUrl,
+        requestMethod: 'POST',
+      })
+      if (successBody.parseError) {
+        throw new Error(successBody.parseError)
+      }
+      const data = successBody.payload
       if (isAsyncTaskResponse(data)) {
         const taskId = data.taskId
         const episodeIdForStream =

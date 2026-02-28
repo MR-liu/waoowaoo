@@ -1,9 +1,32 @@
-import { logError as _ulogError } from '@/lib/logging/core'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireProjectAuthLight, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
 import { resolveTaskLocale } from '@/lib/task/resolve-locale'
+import { logWarn } from '@/lib/logging/core'
+
+function toErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) return error.message
+    return String(error)
+}
+
+async function readJsonRecordSafely(response: Response): Promise<{
+    result: Record<string, unknown> | null
+    parseError: string | null
+}> {
+    try {
+        const payload = await response.json()
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            return { result: null, parseError: 'response JSON is not an object' }
+        }
+        return { result: payload as Record<string, unknown>, parseError: null }
+    } catch (error) {
+        return {
+            result: null,
+            parseError: `invalid JSON response (${toErrorMessage(error)})`,
+        }
+    }
+}
 
 /**
  * POST /api/novel-promotion/[projectId]/generate-character-image
@@ -85,12 +108,34 @@ export const POST = apiHandler(async (
         })
     })
 
-    const result = await generateRes.json()
+    const parsed = await readJsonRecordSafely(generateRes)
+    const result = parsed.result
 
     if (!generateRes.ok) {
-        _ulogError('[Generate Character Image] 失败:', result.error)
-        throw new ApiError('GENERATION_FAILED')
+        const upstreamErrorMessage =
+            typeof result?.error === 'string' && result.error.trim()
+                ? result.error.trim()
+                : typeof result?.message === 'string' && result.message.trim()
+                    ? result.message.trim()
+                    : parsed.parseError
+                        ? `downstream generate-image failed: ${parsed.parseError}`
+                    : `downstream generate-image failed with status ${generateRes.status}`
+        throw new ApiError('GENERATION_FAILED', {
+            message: upstreamErrorMessage,
+            upstreamStatus: generateRes.status,
+            upstreamCode: typeof result?.code === 'string' ? result.code : undefined,
+            upstreamParseError: parsed.parseError || undefined,
+        })
     }
 
-    return NextResponse.json(result)
+    if (parsed.parseError) {
+        logWarn('[generate-character-image] downstream success response is not valid JSON object', {
+            projectId,
+            characterId,
+            upstreamStatus: generateRes.status,
+            parseError: parsed.parseError,
+        })
+    }
+
+    return NextResponse.json(result || { success: true })
 })

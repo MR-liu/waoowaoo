@@ -128,4 +128,18 @@ describe('createWorkerLLMStreamCallbacks', () => {
     expect(payload.stepTitle).toBe('A')
     expect(payload.output).toBe('characters-final')
   })
+
+  it('flush throws explicitly when progress publish fails', async () => {
+    const job = buildJob()
+    const context = createWorkerLLMStreamContext(job, 'story_to_script')
+    const callbacks = createWorkerLLMStreamCallbacks(job, context)
+    reportTaskProgressMock.mockRejectedValueOnce(new Error('publish failed'))
+
+    callbacks.onStage({
+      stage: 'streaming',
+      provider: 'ark',
+    })
+
+    await expect(callbacks.flush()).rejects.toThrow('publish failed')
+  })
 })
