@@ -1,0 +1,43 @@
+{
+  "stats": {
+    "clips": "片段",
+    "storyboards": "分镜",
+    "images": "图片",
+    "videos": "视频"
+  },
+  "burndown": {
+    "title": "生产进度",
+    "stages": {
+      "storyboard": "分镜",
+      "image": "图片",
+      "video": "视频",
+      "voice": "配音"
+    }
+  },
+  "producer": {
+    "title": "制片工作台",
+    "subtitle": "项目组合概览、预算与进度管理",
+    "newProject": "新建项目",
+    "totalProjects": "项目总数",
+    "cgProjects": "CG 项目",
+    "npProjects": "推文项目",
+    "totalCost": "总花费",
+    "recentProjects": "最近项目",
+    "noProjects": "还没有项目，点击上方创建"
+  },
+  "director": {
+    "title": "审片工作台",
+    "subtitle": "待审核内容、批注与反馈",
+    "pendingReview": "待审核",
+    "allClear": "所有内容已审核完毕"
+  },
+  "artist": {
+    "title": "我的任务",
+    "subtitle": "待完成任务与交付进度",
+    "todo": "待开始",
+    "inProgress": "进行中",
+    "needsRevision": "需修改",
+    "myTasks": "任务列表",
+    "noTasks": "暂无分配的任务"
+  }
+}

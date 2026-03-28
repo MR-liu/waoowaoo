@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
+import { requireProjectAccess, isErrorResponse } from '@/lib/api-auth'
 import { apiHandler, ApiError } from '@/lib/api-errors'
 import { runSideEffectWithWarning, type SideEffectWarning } from '@/lib/api/side-effect-warning'
 import { attachMediaFieldsToProject } from '@/lib/media/attach'
@@ -15,12 +15,9 @@ export const GET = apiHandler(async (
 ) => {
   const { projectId } = await context.params
 
-  // 🔐 统一权限验证
-  const authResult = await requireUserAuth()
+  const authResult = await requireProjectAccess(projectId)
   if (isErrorResponse(authResult)) return authResult
-  const { session } = authResult
 
-  // 获取基础项目信息
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     include: { user: true }
@@ -28,10 +25,6 @@ export const GET = apiHandler(async (
 
   if (!project) {
     throw new ApiError('NOT_FOUND')
-  }
-
-  if (project.userId !== session.user.id) {
-    throw new ApiError('FORBIDDEN')
   }
 
   const updateWarnings: SideEffectWarning[] = []
@@ -75,18 +68,17 @@ export const GET = apiHandler(async (
     }
   })
 
-  if (!novelPromotionData) {
+  const isCgProject = project.projectType === 'cg'
+
+  if (!isCgProject && !novelPromotionData) {
     throw new ApiError('NOT_FOUND')
   }
 
-  // 转换为稳定媒体 URL（并保留兼容字段）
-  const novelPromotionDataWithSignedUrls = await attachMediaFieldsToProject(novelPromotionData)
+  const fullProject: Record<string, unknown> = { ...project }
 
-  const fullProject = {
-    ...project,
-    novelPromotionData: novelPromotionDataWithSignedUrls
-    // 🔥 不再用 userPreference 覆盖任何字段
-    // editModel 等配置应该直接使用 novelPromotionData 中的值
+  if (novelPromotionData) {
+    const novelPromotionDataWithSignedUrls = await attachMediaFieldsToProject(novelPromotionData)
+    fullProject.novelPromotionData = novelPromotionDataWithSignedUrls
   }
 
   return NextResponse.json({

@@ -19,6 +19,9 @@
     "rename": "重命名",
     "newEpisodePlaceholder": "输入剧集名称...",
     "create": "创建",
-    "addEpisode": "添加剧集"
+    "addEpisode": "添加剧集",
+    "createFailed": "创建剧集失败",
+    "renameFailed": "重命名失败",
+    "deleteFailed": "删除失败"
   }
 }

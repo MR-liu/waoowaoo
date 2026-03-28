@@ -21,12 +21,24 @@ const springModal: Transition = {
   mass: 1,
 }
 
+const modalTiming: Transition = {
+  duration: 0.24,
+  ease: [0.22, 1, 0.36, 1],
+}
+
+const pageEnterTiming: Transition = {
+  duration: 0.32,
+  ease: [0.22, 1, 0.36, 1],
+}
+
 export const MOTION_PRESETS = {
   spring: {
     gentle: springGentle,
     snappy: springSnappy,
     modal: springModal,
   },
-  hover: { scale: 1.02 },
-  press: { scale: 0.98 },
+  hover: { scale: 1.01 },
+  press: { scale: 0.99 },
+  modal: modalTiming,
+  pageEnter: pageEnterTiming,
 } as const

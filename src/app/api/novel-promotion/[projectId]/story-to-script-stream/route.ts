@@ -44,7 +44,7 @@ export const POST = apiHandler(async (
   if (isErrorResponse(authResult)) return authResult
   const { session, project } = authResult
 
-  if (project.mode !== 'novel-promotion') {
+  if (project.projectType !== 'novel-promotion') {
     throw new ApiError('INVALID_PARAMS')
   }
 

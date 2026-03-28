@@ -5,6 +5,9 @@ import ScriptStage from './ScriptStage'
 import StoryboardStage from './StoryboardStage'
 import VideoStageRoute from './VideoStageRoute'
 import VoiceStageRoute from './VoiceStageRoute'
+import EditorStageRoute from './EditorStageRoute'
+import KanbanView from './KanbanView'
+import DashboardView from './DashboardView'
 
 interface WorkspaceStageContentProps {
   currentStage: string
@@ -24,6 +27,12 @@ export default function WorkspaceStageContent({
       {currentStage === 'videos' && <VideoStageRoute />}
 
       {currentStage === 'voice' && <VoiceStageRoute />}
+
+      {currentStage === 'editor' && <EditorStageRoute />}
+
+      {currentStage === 'kanban' && <KanbanView />}
+
+      {currentStage === 'dashboard' && <DashboardView />}
     </div>
   )
 }

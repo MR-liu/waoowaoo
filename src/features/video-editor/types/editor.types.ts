@@ -34,22 +34,33 @@ export interface EditorConfig {
  */
 export interface VideoClip {
     id: string
-    src: string                    // COS URL
-    durationInFrames: number       // 播放时长
+    src: string
+    durationInFrames: number
+    originalDurationInFrames?: number
 
-    // 素材内裁剪 (可选)
     trim?: {
-        from: number                 // 素材起始帧
-        to: number                   // 素材结束帧
+        from: number
+        to: number
     }
 
-    // 附属内容 - 跟随视频移动
+    speed?: number
+    reversed?: boolean
+    frozen?: {
+        frameNumber: number
+        durationInFrames: number
+    }
+
+    volume?: number
+
+    crop?: {
+        x: number
+        y: number
+        width: number
+        height: number
+    }
+
     attachment?: ClipAttachment
-
-    // 转场 (与下一个片段的过渡)
     transition?: ClipTransition
-
-    // AI 元数据 (用于回溯)
     metadata: ClipMetadata
 }
 

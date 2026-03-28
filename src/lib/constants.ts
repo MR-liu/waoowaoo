@@ -5,24 +5,24 @@
  */
 export const PRIMARY_APPEARANCE_INDEX = 0
 
-// 比例配置（nanobanana 支持的所有比例，按常用程度排序）
-export const ASPECT_RATIO_CONFIGS: Record<string, { label: string; isVertical: boolean }> = {
-  '16:9': { label: '16:9', isVertical: false },
-  '9:16': { label: '9:16', isVertical: true },
-  '1:1': { label: '1:1', isVertical: false },
+export const ASPECT_RATIO_CONFIGS: Record<string, { label: string; isVertical: boolean; platforms?: string[] }> = {
+  '16:9': { label: '16:9', isVertical: false, platforms: ['YouTube', 'B站'] },
+  '9:16': { label: '9:16', isVertical: true, platforms: ['TikTok', 'Reels', 'Shorts', '抖音', '快手', '小红书'] },
+  '1:1': { label: '1:1', isVertical: false, platforms: ['Instagram'] },
   '3:2': { label: '3:2', isVertical: false },
   '2:3': { label: '2:3', isVertical: true },
   '4:3': { label: '4:3', isVertical: false },
   '3:4': { label: '3:4', isVertical: true },
   '5:4': { label: '5:4', isVertical: false },
-  '4:5': { label: '4:5', isVertical: true },
+  '4:5': { label: '4:5', isVertical: true, platforms: ['Instagram Post'] },
   '21:9': { label: '21:9', isVertical: false },
 }
 
-// 配置页面使用的选项列表（从 ASPECT_RATIO_CONFIGS 派生）
 export const VIDEO_RATIOS = Object.entries(ASPECT_RATIO_CONFIGS).map(([value, config]) => ({
   value,
-  label: config.label
+  label: config.platforms?.length
+    ? `${config.label} (${config.platforms.join(' / ')})`
+    : config.label,
 }))
 
 // 获取比例配置

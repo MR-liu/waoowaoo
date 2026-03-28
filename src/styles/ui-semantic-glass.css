@@ -16,6 +16,12 @@
   width: min(1200px, calc(100% - 24px));
 }
 
+.studio-panel {
+  border: 1px solid var(--glass-stroke-base);
+  border-radius: 20px;
+  background: var(--glass-bg-surface);
+}
+
 .glass-shell-content {
   border: 1px solid var(--glass-stroke-soft);
   border-radius: var(--glass-radius-xl);

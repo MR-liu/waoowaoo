@@ -1,0 +1,53 @@
+{
+  "tabs": {
+    "shots": "镜头",
+    "assets": "资产",
+    "tasks": "任务"
+  },
+  "columns": {
+    "code": "编号",
+    "name": "名称",
+    "status": "状态",
+    "type": "类型",
+    "description": "描述",
+    "sequence": "场次",
+    "frameIn": "入帧",
+    "frameOut": "出帧",
+    "duration": "时长",
+    "assetType": "资产类型",
+    "pipelineStep": "流程步骤",
+    "assignee": "负责人",
+    "bidDays": "预估天数",
+    "actualDays": "实际天数",
+    "startDate": "开始日期",
+    "dueDate": "截止日期",
+    "entity": "镜头 / 资产"
+  },
+  "status": {
+    "not_started": "未开始",
+    "in_progress": "进行中",
+    "pending_review": "待审核",
+    "approved": "已通过",
+    "final": "定稿"
+  },
+  "empty": "暂无数据",
+  "loading": "加载中…",
+  "dashboard": {
+    "totalShots": "镜头总数",
+    "totalAssets": "资产总数",
+    "completionRate": "完成率",
+    "overdueTasks": "逾期任务",
+    "burndown": "燃尽图",
+    "planned": "计划",
+    "actual": "实际",
+    "costSummary": "成本概览",
+    "budgetDays": "预算（天）",
+    "actualDays": "实际（天）",
+    "utilized": "已消耗",
+    "pipelineStatus": "流程状态",
+    "resourceUtilization": "资源利用率",
+    "resource": "人员",
+    "noData": "暂无数据",
+    "loadError": "仪表盘加载失败"
+  }
+}

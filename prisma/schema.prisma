@@ -149,7 +149,6 @@ model VideoEditorProject {
   episodeId    String                @unique
   projectData  String                @db.Text // JSON 存储编辑项目数据
   renderStatus String? // pending | rendering | completed | failed
-  renderTaskId String?
   outputUrl    String?               @db.Text
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @default(now()) @updatedAt
@@ -349,19 +348,338 @@ model Project {
   id                 String                 @id @default(uuid())
   name               String
   description        String?                @db.Text
-  mode               String                 @default("novel-promotion")
+  projectType        String                 @default("novel-promotion")
   userId             String
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @default(now()) @updatedAt
   lastAccessedAt     DateTime?
+  resolution         String?
+  frameRate          String?
+  colorSpace         String?
   novelPromotionData NovelPromotionProject?
   tasks              Task[]
   taskEvents         TaskEvent[]
   user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   usageCosts         UsageCost[]
+  shares             ProjectShare[]
+  members            ProjectMember[]
+  chatChannels       ChatChannel[]
+  sequences          Sequence[]
+  assets             CgAsset[]
+  pipelineSteps      PipelineStep[]
+  namingTemplates    NamingTemplate[]
+  eventTriggers      EventTrigger[]
+  playlists          Playlist[]
 
   @@index([userId])
+  @@index([projectType])
   @@map("projects")
+}
+
+model Sequence {
+  id          String   @id @default(uuid())
+  projectId   String
+  name        String
+  code        String
+  sortOrder   Int      @default(0)
+  description String?  @db.Text
+  status      String   @default("not_started")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  shots       CgShot[]
+
+  @@unique([projectId, code])
+  @@index([projectId])
+  @@map("sequences")
+}
+
+model CgShot {
+  id            String           @id @default(uuid())
+  sequenceId    String
+  code          String
+  name          String?
+  description   String?          @db.Text
+  sortOrder     Int              @default(0)
+  status        String           @default("not_started")
+  frameIn       Int?
+  frameOut      Int?
+  duration      Int?
+  thumbnailUrl  String?          @db.Text
+  thumbnailMediaId String?
+  thumbnailMedia   MediaObject?  @relation("CgShotThumbnailMedia", fields: [thumbnailMediaId], references: [id], onDelete: SetNull)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @default(now()) @updatedAt
+  sequence      Sequence         @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  productionTasks ProductionTask[] @relation("ShotProductionTasks")
+  notes         CgNote[]         @relation("ShotNotes")
+
+  @@unique([sequenceId, code])
+  @@index([sequenceId])
+  @@index([thumbnailMediaId])
+  @@map("cg_shots")
+}
+
+model CgAsset {
+  id          String            @id @default(uuid())
+  projectId   String
+  name        String
+  code        String
+  assetType   String
+  description String?           @db.Text
+  status      String            @default("not_started")
+  thumbnailUrl  String?         @db.Text
+  thumbnailMediaId String?
+  thumbnailMedia   MediaObject? @relation("CgAssetThumbnailMedia", fields: [thumbnailMediaId], references: [id], onDelete: SetNull)
+  metadata    String?           @db.Text
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @default(now()) @updatedAt
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  variations  AssetVariation[]
+  productionTasks ProductionTask[] @relation("AssetProductionTasks")
+  notes       CgNote[]          @relation("AssetNotes")
+  publishDependents PublishDependency[] @relation("DependentAsset")
+
+  @@unique([projectId, code])
+  @@index([projectId])
+  @@index([assetType])
+  @@index([thumbnailMediaId])
+  @@map("cg_assets")
+}
+
+model AssetVariation {
+  id          String   @id @default(uuid())
+  assetId     String
+  name        String
+  code        String
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  asset       CgAsset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, code])
+  @@index([assetId])
+  @@map("asset_variations")
+}
+
+model PipelineStep {
+  id          String           @id @default(uuid())
+  projectId   String
+  name        String
+  code        String
+  sortOrder   Int              @default(0)
+  color       String?
+  icon        String?
+  entityType  String           @default("shot")
+  createdAt   DateTime         @default(now())
+  project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  productionTasks ProductionTask[]
+
+  @@unique([projectId, code])
+  @@index([projectId])
+  @@map("pipeline_steps")
+}
+
+model ProductionTask {
+  id             String        @id @default(uuid())
+  pipelineStepId String
+  shotId         String?
+  assetId        String?
+  assigneeId     String?
+  status         String        @default("not_started")
+  priority       Int           @default(0)
+  bidDays        Float?
+  actualDays     Float?
+  startDate      DateTime?
+  dueDate        DateTime?
+  completedAt    DateTime?
+  sortOrder      Int           @default(0)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @default(now()) @updatedAt
+  pipelineStep   PipelineStep  @relation(fields: [pipelineStepId], references: [id], onDelete: Cascade)
+  shot           CgShot?       @relation("ShotProductionTasks", fields: [shotId], references: [id], onDelete: Cascade)
+  asset          CgAsset?      @relation("AssetProductionTasks", fields: [assetId], references: [id], onDelete: Cascade)
+  assignee       User?         @relation("AssignedTasks", fields: [assigneeId], references: [id], onDelete: SetNull)
+  versions       CgVersion[]
+  notes          CgNote[]      @relation("TaskNotes")
+  dependencies   TaskDependency[] @relation("DependentTask")
+  dependents     TaskDependency[] @relation("PrerequisiteTask")
+
+  @@index([pipelineStepId])
+  @@index([shotId])
+  @@index([assetId])
+  @@index([assigneeId])
+  @@index([status])
+  @@map("production_tasks")
+}
+
+model TaskDependency {
+  id               String         @id @default(uuid())
+  dependentTaskId  String
+  prerequisiteTaskId String
+  type             String         @default("FS")
+  lagDays          Float          @default(0)
+  dependentTask    ProductionTask @relation("DependentTask", fields: [dependentTaskId], references: [id], onDelete: Cascade)
+  prerequisiteTask ProductionTask @relation("PrerequisiteTask", fields: [prerequisiteTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([dependentTaskId, prerequisiteTaskId])
+  @@index([prerequisiteTaskId])
+  @@map("task_dependencies")
+}
+
+model CgVersion {
+  id               String         @id @default(uuid())
+  productionTaskId String
+  versionNumber    Int
+  comment          String?        @db.Text
+  status           String         @default("pending_review")
+  filePath         String?        @db.Text
+  mediaPath        String?        @db.Text
+  mediaId          String?
+  media            MediaObject?   @relation("CgVersionMedia", fields: [mediaId], references: [id], onDelete: SetNull)
+  thumbnailUrl     String?        @db.Text
+  metadata         String?        @db.Text
+  createdById      String
+  createdAt        DateTime       @default(now())
+  productionTask   ProductionTask @relation(fields: [productionTaskId], references: [id], onDelete: Cascade)
+  createdBy        User           @relation("CreatedVersions", fields: [createdById], references: [id], onDelete: Cascade)
+  publishes        CgPublish[]
+  notes            CgNote[]       @relation("VersionNotes")
+  playlistItems    PlaylistItem[]
+
+  @@unique([productionTaskId, versionNumber])
+  @@index([productionTaskId])
+  @@index([createdById])
+  @@index([mediaId])
+  @@map("cg_versions")
+}
+
+model CgPublish {
+  id           String              @id @default(uuid())
+  versionId    String
+  publishType  String
+  filePath     String              @db.Text
+  fileHash     String?
+  fileSize     BigInt?
+  isLocked     Boolean             @default(true)
+  metadata     String?             @db.Text
+  createdById  String
+  createdAt    DateTime            @default(now())
+  version      CgVersion           @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  createdBy    User                @relation("CreatedPublishes", fields: [createdById], references: [id], onDelete: Cascade)
+  dependencies PublishDependency[] @relation("PublishSource")
+
+  @@index([versionId])
+  @@index([createdById])
+  @@map("cg_publishes")
+}
+
+model PublishDependency {
+  id          String    @id @default(uuid())
+  publishId   String
+  assetId     String
+  publish     CgPublish @relation("PublishSource", fields: [publishId], references: [id], onDelete: Cascade)
+  asset       CgAsset   @relation("DependentAsset", fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([publishId, assetId])
+  @@index([assetId])
+  @@map("publish_dependencies")
+}
+
+model CgNote {
+  id               String          @id @default(uuid())
+  authorId         String
+  shotId           String?
+  assetId          String?
+  productionTaskId String?
+  versionId        String?
+  content          String          @db.Text
+  annotations      String?         @db.Text
+  frameNumber      Int?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @default(now()) @updatedAt
+  author           User            @relation("AuthoredNotes", fields: [authorId], references: [id], onDelete: Cascade)
+  shot             CgShot?         @relation("ShotNotes", fields: [shotId], references: [id], onDelete: Cascade)
+  asset            CgAsset?        @relation("AssetNotes", fields: [assetId], references: [id], onDelete: Cascade)
+  productionTask   ProductionTask? @relation("TaskNotes", fields: [productionTaskId], references: [id], onDelete: Cascade)
+  version          CgVersion?      @relation("VersionNotes", fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([authorId])
+  @@index([shotId])
+  @@index([assetId])
+  @@index([productionTaskId])
+  @@index([versionId])
+  @@map("cg_notes")
+}
+
+model Playlist {
+  id        String         @id @default(uuid())
+  projectId String
+  name      String
+  createdById String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @default(now()) @updatedAt
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User           @relation("CreatedPlaylists", fields: [createdById], references: [id], onDelete: Cascade)
+  items     PlaylistItem[]
+
+  @@index([projectId])
+  @@index([createdById])
+  @@map("playlists")
+}
+
+model PlaylistItem {
+  id         String    @id @default(uuid())
+  playlistId String
+  versionId  String
+  sortOrder  Int       @default(0)
+  playlist   Playlist  @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  version    CgVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([playlistId])
+  @@index([versionId])
+  @@map("playlist_items")
+}
+
+model NamingTemplate {
+  id        String  @id @default(uuid())
+  projectId String
+  entityType String
+  pattern   String
+  example   String?
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, entityType])
+  @@map("naming_templates")
+}
+
+model EventTrigger {
+  id           String  @id @default(uuid())
+  projectId    String
+  name         String
+  eventType    String
+  conditions   String? @db.Text
+  actions      String  @db.Text
+  enabled      Boolean @default(true)
+  createdAt    DateTime @default(now())
+  project      Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([eventType])
+  @@map("event_triggers")
+}
+
+model ProjectShare {
+  id        String    @id @default(uuid())
+  projectId String
+  shareCode String    @unique
+  password  String?
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([shareCode])
+  @@map("project_shares")
 }
 
 model Session {
@@ -404,6 +722,7 @@ model User {
   emailVerified DateTime?
   image         String?
   password      String?
+  systemRole    String          @default("artist")
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @default(now()) @updatedAt
   accounts      Account[]
@@ -422,6 +741,14 @@ model User {
   taskEvents         TaskEvent[]
   balanceFreezes     BalanceFreeze[]
   balanceTransactions BalanceTransaction[]
+  projectMemberships ProjectMember[]      @relation("ProjectMembers")
+  chatMessages       ChatMessage[]        @relation("ChatMessages")
+  messageReadStates  MessageReadState[]   @relation("MessageReadStates")
+  assignedTasks      ProductionTask[]     @relation("AssignedTasks")
+  createdVersions    CgVersion[]          @relation("CreatedVersions")
+  createdPublishes   CgPublish[]          @relation("CreatedPublishes")
+  authoredNotes      CgNote[]             @relation("AuthoredNotes")
+  createdPlaylists   Playlist[]           @relation("CreatedPlaylists")
 
   @@map("user")
 }
@@ -492,7 +819,7 @@ model NovelPromotionVoiceLine {
   audioDuration       Int?
   matchedPanelId      String?
   episode             NovelPromotionEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  matchedPanel        NovelPromotionPanel?  @relation(fields: [matchedPanelId], references: [id])
+  matchedPanel        NovelPromotionPanel?  @relation(fields: [matchedPanelId], references: [id], onDelete: SetNull)
 
   @@unique([episodeId, lineIndex])
   @@index([episodeId])
@@ -826,9 +1153,93 @@ model MediaObject {
   globalLocationImageImages             GlobalLocationImage[]       @relation("GlobalLocationImageMedia")
   globalLocationImagePreviousImages     GlobalLocationImage[]       @relation("GlobalLocationImagePreviousImageMedia")
   globalVoiceCustomVoices               GlobalVoice[]               @relation("GlobalVoiceCustomVoiceMedia")
+  cgShotThumbnails                      CgShot[]                    @relation("CgShotThumbnailMedia")
+  cgAssetThumbnails                     CgAsset[]                   @relation("CgAssetThumbnailMedia")
+  cgVersionMedia                        CgVersion[]                 @relation("CgVersionMedia")
 
   @@index([createdAt])
   @@map("media_objects")
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  role      String   @default("editor")
+  joinedAt  DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation("ProjectMembers", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+model ChatChannel {
+  id        String        @id @default(uuid())
+  projectId String
+  name      String
+  type      String        @default("project")
+  createdAt DateTime      @default(now())
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+
+  @@index([projectId])
+  @@map("chat_channels")
+}
+
+model ChatMessage {
+  id        String      @id @default(uuid())
+  channelId String
+  senderId  String
+  content   String      @db.Text
+  type      String      @default("text")
+  mentions  String?     @db.Text
+  replyToId String?
+  createdAt DateTime    @default(now())
+  channel   ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender    User        @relation("ChatMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo   ChatMessage?  @relation("ChatMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   ChatMessage[] @relation("ChatMessageReplies")
+  readStates MessageReadState[]
+
+  @@index([channelId, createdAt])
+  @@index([senderId])
+  @@map("chat_messages")
+}
+
+model MessageReadState {
+  id               String      @id @default(uuid())
+  userId           String
+  channelId        String
+  lastReadMessageId String?
+  updatedAt        DateTime    @default(now()) @updatedAt
+  user             User        @relation("MessageReadStates", fields: [userId], references: [id], onDelete: Cascade)
+  lastReadMessage  ChatMessage? @relation(fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, channelId])
+  @@index([channelId])
+  @@map("message_read_states")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  projectId String?
+  action    String
+  resource  String
+  resourceId String?
+  metadata  String?  @db.Text
+  ipAddress String?
+  userAgent String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
 }
 
 model LegacyMediaRefBackup {

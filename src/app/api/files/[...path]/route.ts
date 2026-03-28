@@ -9,10 +9,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { apiHandler, ApiError } from '@/lib/api-errors'
+import { requireUserAuth, isErrorResponse } from '@/lib/api-auth'
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || './data/uploads'
 
-// MIME类型映射
 const MIME_TYPES: Record<string, string> = {
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
@@ -38,6 +38,9 @@ export const GET = apiHandler(async (
     _request: NextRequest,
     context: { params: Promise<{ path: string[] }> }
 ) => {
+        const authResult = await requireUserAuth()
+        if (isErrorResponse(authResult)) return authResult
+
         const { path: pathSegments } = await context.params
 
         // 解码路径（因为URL编码过）

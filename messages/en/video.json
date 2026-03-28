@@ -144,22 +144,50 @@
       "exportStarted": "Export has started. Please wait...",
       "exportFailed": "Export failed"
     },
+    "menu": {
+      "file": "File",
+      "edit": "Edit"
+    },
     "toolbar": {
-      "back": "← Back",
-      "saveDirty": "Save *",
+      "back": "Back",
+      "saveDirty": "Save",
       "saved": "Saved",
-      "export": "Export Video"
+      "export": "Export"
+    },
+    "tabs": {
+      "media": "Media",
+      "audio": "Audio",
+      "text": "Text",
+      "effects": "Effects",
+      "transitions": "Transitions",
+      "filters": "Filters",
+      "stickers": "Stickers",
+      "comingSoon": "Coming soon"
+    },
+    "tools": {
+      "split": "Split",
+      "delete": "Delete",
+      "copy": "Copy",
+      "undo": "Undo"
     },
     "left": {
       "title": "Media Library",
-      "description": "Clips imported from the video stage will appear here"
+      "description": "Clips imported from the video stage will appear here",
+      "clips": "Project Clips"
     },
     "right": {
       "title": "Properties",
-      "clipLabel": "Clip:",
+      "clipLabel": "Clip",
       "clipFallback": "Clip {index}",
-      "durationLabel": "Duration:",
-      "transitionLabel": "Transition to Next Clip",
+      "durationLabel": "Duration",
+      "resolution": "Resolution",
+      "audio": "Audio",
+      "voiceAttached": "Voice attached",
+      "subtitle": "Subtitle",
+      "transitionLabel": "Transition",
+      "speed": "Speed",
+      "reverse": "Reverse",
+      "freeze": "Freeze",
       "deleteConfirm": "Delete this clip?",
       "deleteClip": "Delete Clip",
       "selectClipHint": "Select a clip to view properties"
@@ -168,11 +196,17 @@
       "emptyStartEditing": "Add media to start editing"
     },
     "timeline": {
-      "zoomLabel": "Zoom:",
+      "zoomLabel": "Zoom",
       "videoTrack": "Video",
-      "emptyHint": "Drag video clips from media library to here",
+      "emptyHint": "Drop clips here",
       "audioTrack": "Voice",
-      "audioBadge": "A"
+      "audioBadge": "A",
+      "subtitleTrack": "Subtitle",
+      "effectTrack": "Effects",
+      "bgmTrack": "BGM",
+      "speedBadge": "{speed}x",
+      "frozenBadge": "Frozen",
+      "reversedBadge": "Reversed"
     },
     "transition": {
       "title": "Transition",

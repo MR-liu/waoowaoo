@@ -1,376 +1,511 @@
 'use client'
 
-import React from 'react'
-import { useTranslations } from 'next-intl'
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import {
     DndContext,
     closestCenter,
-    KeyboardSensor,
     PointerSensor,
+    KeyboardSensor,
     useSensor,
     useSensors,
-    DragEndEvent
+    type DragEndEvent,
 } from '@dnd-kit/core'
 import {
     SortableContext,
     sortableKeyboardCoordinates,
     horizontalListSortingStrategy,
-    useSortable
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { VideoClip, TimelineState, EditorConfig } from '../../types/editor.types'
-import { framesToTime } from '../../utils/time-utils'
+import type { VideoClip, BgmClip, TimelineState, EditorConfig, ComputedClip } from '../../types/editor.types'
+import { computeClipPositions, calculateTimelineDuration } from '../../utils/time-utils'
+import type { TrackId, TrackStates, TrimDragState, ContextAction, ContextMenuState } from './timeline-types'
+import {
+    BASE_PIXELS_PER_SECOND,
+    RULER_HEIGHT,
+    TIMELINE_END_PADDING,
+    TRACK_CONFIGS,
+    TRACK_BORDER,
+    TRACK_HEADER_WIDTH,
+    SNAP_THRESHOLD_PX,
+    MIN_TRACK_HEIGHT,
+    MAX_TRACK_HEIGHT,
+    MINIMAP_HEIGHT,
+    createDefaultTrackStates,
+} from './timeline-constants'
+import { TimeRuler } from './TimeRuler'
+import { Playhead } from './Playhead'
+import { TrackHeader } from './TrackHeader'
+import { ClipBlock } from './ClipBlock'
+import { AudioClipBlock } from './AudioClipBlock'
+import { SubtitleBlock } from './SubtitleBlock'
+import { BgmClipBlock } from './BgmClipBlock'
+import { ClipContextMenu } from './ClipContextMenu'
+import { TimelineMinimap } from './TimelineMinimap'
 
-interface TimelineProps {
+export interface TimelineProps {
     clips: VideoClip[]
+    bgmClips: BgmClip[]
     timelineState: TimelineState
     config: EditorConfig
+    splitIndicatorFrame: number | null
     onReorder: (fromIndex: number, toIndex: number) => void
     onSelectClip: (clipId: string | null) => void
     onZoomChange: (zoom: number) => void
-    onSeek?: (frame: number) => void
+    onSeek: (frame: number) => void
+    onTrimStart: (clipId: string, deltaFrames: number) => void
+    onTrimEnd: (clipId: string, deltaFrames: number) => void
+    onContextAction: (action: ContextAction, clipId: string) => void
 }
 
-/**
- * 时间轴主组件
- * 使用 dnd-kit 实现拖拽排序
- */
 export const Timeline: React.FC<TimelineProps> = ({
     clips,
+    bgmClips,
     timelineState,
     config,
+    splitIndicatorFrame,
     onReorder,
     onSelectClip,
     onZoomChange,
-    onSeek
+    onSeek,
+    onTrimStart,
+    onTrimEnd,
+    onContextAction,
 }) => {
-    const t = useTranslations('video')
-    // 计算总时长和播放头位置
-    const totalDuration = clips.reduce((sum, clip) => sum + clip.durationInFrames, 0)
-    const playheadPosition = totalDuration > 0 ? (timelineState.currentFrame / totalDuration) * 100 : 0
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 5 // 5px 移动才开始拖拽
+    const [trackStates, setTrackStates] = useState<TrackStates>(createDefaultTrackStates)
+    const [trimDrag, setTrimDrag] = useState<TrimDragState | null>(null)
+    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+    const [trackHeights, setTrackHeights] = useState<Record<TrackId, number>>(() =>
+        Object.fromEntries(TRACK_CONFIGS.map(tc => [tc.id, tc.height])) as Record<TrackId, number>,
+    )
+    const [splitFlash, setSplitFlash] = useState<number | null>(null)
+    const [scrollInfo, setScrollInfo] = useState({ left: 0, width: 0 })
+
+    const scrollRef = useRef<HTMLDivElement>(null)
+    const contentRef = useRef<HTMLDivElement>(null)
+    const trimDragRef = useRef(trimDrag)
+    trimDragRef.current = trimDrag
+
+    // ═══ Computed ═══
+
+    const pixelsPerFrame = useMemo(
+        () => (BASE_PIXELS_PER_SECOND * timelineState.zoom) / config.fps,
+        [timelineState.zoom, config.fps],
+    )
+    const computedClips = useMemo(() => computeClipPositions(clips), [clips])
+    const totalDuration = useMemo(() => calculateTimelineDuration(clips), [clips])
+    const totalWidth = Math.max(totalDuration * pixelsPerFrame + TIMELINE_END_PADDING, 800)
+    const totalTracksHeight = Object.values(trackHeights).reduce((s, h) => s + h, 0)
+
+    const snapPoints = useMemo(() => {
+        const pts: number[] = [0]
+        for (const c of computedClips) { pts.push(c.startFrame, c.endFrame) }
+        pts.push(totalDuration)
+        return [...new Set(pts)].sort((a, b) => a - b)
+    }, [computedClips, totalDuration])
+
+    const audioClips = useMemo(() => computedClips.filter(c => c.attachment?.audio), [computedClips])
+    const subtitleClips = useMemo(() => computedClips.filter(c => c.attachment?.subtitle), [computedClips])
+
+    // ═══ Snap helper ═══
+
+    const snapFrame = useCallback(
+        (frame: number): number => {
+            const thresholdFrames = SNAP_THRESHOLD_PX / pixelsPerFrame
+            let closest = frame
+            let minDist = Infinity
+            for (const sp of snapPoints) {
+                const dist = Math.abs(frame - sp)
+                if (dist < minDist && dist <= thresholdFrames) {
+                    minDist = dist
+                    closest = sp
+                }
             }
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates
-        })
+            return closest
+        },
+        [snapPoints, pixelsPerFrame],
     )
 
-    const handleDragEnd = (event: DragEndEvent) => {
-        const { active, over } = event
+    // ═══ DnD ═══
 
-        if (over && active.id !== over.id) {
-            const oldIndex = clips.findIndex(c => c.id === active.id)
-            const newIndex = clips.findIndex(c => c.id === over.id)
-            onReorder(oldIndex, newIndex)
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    )
+
+    const handleDragEnd = useCallback(
+        (event: DragEndEvent) => {
+            const { active, over } = event
+            if (over && active.id !== over.id) {
+                const oldIndex = clips.findIndex(c => c.id === active.id)
+                const newIndex = clips.findIndex(c => c.id === over.id)
+                if (oldIndex !== -1 && newIndex !== -1) onReorder(oldIndex, newIndex)
+            }
+        },
+        [clips, onReorder],
+    )
+
+    // ═══ Auto-scroll playhead ═══
+
+    useEffect(() => {
+        if (!timelineState.playing || !scrollRef.current) return
+        const el = scrollRef.current
+        const px = timelineState.currentFrame * pixelsPerFrame
+        const margin = el.clientWidth * 0.15
+        if (px > el.scrollLeft + el.clientWidth - margin) el.scrollLeft = px - el.clientWidth * 0.3
+        else if (px < el.scrollLeft + margin) el.scrollLeft = px - el.clientWidth * 0.7
+    }, [timelineState.currentFrame, timelineState.playing, pixelsPerFrame])
+
+    // ═══ Ctrl+Wheel zoom ═══
+
+    useEffect(() => {
+        const el = scrollRef.current
+        if (!el) return
+        const onWheel = (e: WheelEvent) => {
+            if (!(e.ctrlKey || e.metaKey)) return
+            e.preventDefault()
+            const rect = el.getBoundingClientRect()
+            const mouseXInContent = e.clientX - rect.left + el.scrollLeft
+            const frameAtMouse = mouseXInContent / pixelsPerFrame
+            const delta = e.deltaY > 0 ? -0.15 : 0.15
+            const newZoom = Math.max(0.1, Math.min(5, timelineState.zoom + delta))
+            onZoomChange(newZoom)
+            const newPpf = (BASE_PIXELS_PER_SECOND * newZoom) / config.fps
+            requestAnimationFrame(() => { el.scrollLeft = frameAtMouse * newPpf - (e.clientX - rect.left) })
+        }
+        el.addEventListener('wheel', onWheel, { passive: false })
+        return () => el.removeEventListener('wheel', onWheel)
+    }, [pixelsPerFrame, timelineState.zoom, config.fps, onZoomChange])
+
+    // ═══ Trim drag with snapping ═══
+
+    const handleTrimMouseDown = useCallback(
+        (clipId: string, side: 'start' | 'end', startX: number) => {
+            setTrimDrag({ clipId, side, startX, currentDeltaFrames: 0 })
+        },
+        [],
+    )
+
+    useEffect(() => {
+        if (!trimDrag) return
+        const ppf = pixelsPerFrame
+        const { startX, side, clipId } = trimDrag
+        const clip = computedClips.find(c => c.id === clipId)
+        if (!clip) return
+
+        let lastDelta = 0
+        const onMove = (e: MouseEvent) => {
+            let rawDelta = Math.round((e.clientX - startX) / ppf)
+            const edgeFrame = side === 'start' ? clip.startFrame + rawDelta : clip.endFrame + rawDelta
+            const snapped = snapFrame(edgeFrame)
+            if (snapped !== edgeFrame) rawDelta += snapped - edgeFrame
+            if (rawDelta !== lastDelta) {
+                lastDelta = rawDelta
+                setTrimDrag(prev => (prev ? { ...prev, currentDeltaFrames: rawDelta } : null))
+            }
+        }
+        const onUp = () => {
+            const finalDelta = trimDragRef.current?.currentDeltaFrames ?? 0
+            if (finalDelta !== 0) {
+                if (side === 'start') onTrimStart(clipId, finalDelta)
+                else onTrimEnd(clipId, finalDelta)
+            }
+            setTrimDrag(null)
+            window.removeEventListener('mousemove', onMove)
+            window.removeEventListener('mouseup', onUp)
+        }
+        window.addEventListener('mousemove', onMove)
+        window.addEventListener('mouseup', onUp)
+        return () => {
+            window.removeEventListener('mousemove', onMove)
+            window.removeEventListener('mouseup', onUp)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [trimDrag?.clipId, trimDrag?.side, trimDrag?.startX, pixelsPerFrame, computedClips, snapFrame, onTrimStart, onTrimEnd])
+
+    // ═══ Playhead drag with snapping ═══
+
+    const handlePlayheadMouseDown = useCallback(
+        (e: React.MouseEvent) => {
+            e.preventDefault()
+            const content = contentRef.current
+            if (!content) return
+            const seekAt = (ev: MouseEvent) => {
+                const rect = content.getBoundingClientRect()
+                const x = ev.clientX - rect.left
+                const rawFrame = Math.max(0, Math.min(totalDuration, Math.round(x / pixelsPerFrame)))
+                onSeek(snapFrame(rawFrame))
+            }
+            seekAt(e.nativeEvent)
+            const up = () => { window.removeEventListener('mousemove', seekAt); window.removeEventListener('mouseup', up) }
+            window.addEventListener('mousemove', seekAt)
+            window.addEventListener('mouseup', up)
+        },
+        [totalDuration, pixelsPerFrame, onSeek, snapFrame],
+    )
+
+    // ═══ Multi-select + click-to-seek ═══
+
+    const handleClipClick = useCallback(
+        (clip: ComputedClip, e: React.MouseEvent) => {
+            if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                setSelectedIds(prev => {
+                    const next = new Set(prev)
+                    if (next.has(clip.id)) next.delete(clip.id)
+                    else next.add(clip.id)
+                    return next
+                })
+            } else {
+                setSelectedIds(new Set([clip.id]))
+            }
+            onSelectClip(clip.id)
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+            const xInClip = e.clientX - rect.left
+            const frame = clip.startFrame + Math.round(xInClip / pixelsPerFrame)
+            onSeek(snapFrame(Math.max(0, Math.min(totalDuration, frame))))
+        },
+        [onSelectClip, pixelsPerFrame, onSeek, snapFrame, totalDuration],
+    )
+
+    // ═══ Context menu ═══
+
+    const handleClipContextMenu = useCallback(
+        (clipId: string, e: React.MouseEvent) => {
+            e.preventDefault()
+            setContextMenu({ clipId, x: e.clientX, y: e.clientY })
+        },
+        [],
+    )
+
+    const handleContextAction = useCallback(
+        (action: ContextAction) => {
+            if (!contextMenu) return
+            onContextAction(action, contextMenu.clipId)
+            setContextMenu(null)
+        },
+        [contextMenu, onContextAction],
+    )
+
+    // ═══ Split flash ═══
+
+    useEffect(() => {
+        if (splitIndicatorFrame == null) return
+        setSplitFlash(splitIndicatorFrame)
+        const timer = setTimeout(() => setSplitFlash(null), 600)
+        return () => clearTimeout(timer)
+    }, [splitIndicatorFrame])
+
+    // ═══ Track toggles ═══
+
+    const toggleTrack = useCallback(
+        (trackId: keyof TrackStates, prop: 'locked' | 'hidden' | 'muted') => {
+            setTrackStates(prev => ({
+                ...prev,
+                [trackId]: { ...prev[trackId], [prop]: !prev[trackId][prop] },
+            }))
+        },
+        [],
+    )
+
+    // ═══ Track resize ═══
+
+    const handleTrackResizeStart = useCallback(
+        (trackId: TrackId, e: React.MouseEvent) => {
+            e.preventDefault()
+            let lastY = e.clientY
+            const onMove = (ev: MouseEvent) => {
+                const delta = ev.clientY - lastY
+                lastY = ev.clientY
+                setTrackHeights(prev => ({
+                    ...prev,
+                    [trackId]: Math.max(MIN_TRACK_HEIGHT, Math.min(MAX_TRACK_HEIGHT, prev[trackId] + delta)),
+                }))
+            }
+            const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+            window.addEventListener('mousemove', onMove)
+            window.addEventListener('mouseup', onUp)
+        },
+        [],
+    )
+
+    // ═══ Scroll tracking for minimap ═══
+
+    const handleScroll = useCallback(() => {
+        if (scrollRef.current) {
+            setScrollInfo({ left: scrollRef.current.scrollLeft, width: scrollRef.current.clientWidth })
+        }
+    }, [])
+
+    useEffect(() => {
+        const el = scrollRef.current
+        if (!el) return
+        setScrollInfo({ left: el.scrollLeft, width: el.clientWidth })
+        el.addEventListener('scroll', handleScroll, { passive: true })
+        return () => el.removeEventListener('scroll', handleScroll)
+    }, [handleScroll])
+
+    const handleMinimapNavigate = useCallback((scrollLeft: number) => {
+        if (scrollRef.current) scrollRef.current.scrollLeft = scrollLeft
+    }, [])
+
+    // ═══ Track row renderer ═══
+
+    const trackOrder: TrackId[] = ['video', 'voice', 'subtitle', 'effect', 'bgm']
+    const playheadX = timelineState.currentFrame * pixelsPerFrame
+
+    function renderTrackContent(trackId: TrackId) {
+        switch (trackId) {
+            case 'video':
+                return !trackStates.video.hidden ? (
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                        <SortableContext items={clips.map(c => c.id)} strategy={horizontalListSortingStrategy}>
+                            {computedClips.map((clip, i) => (
+                                <ClipBlock
+                                    key={clip.id}
+                                    clip={clip}
+                                    clipIndex={i}
+                                    pixelsPerFrame={pixelsPerFrame}
+                                    isSelected={timelineState.selectedClipId === clip.id}
+                                    isMultiSelected={selectedIds.has(clip.id) && timelineState.selectedClipId !== clip.id}
+                                    fps={config.fps}
+                                    trackLocked={trackStates.video.locked}
+                                    trimDrag={trimDrag}
+                                    onClick={e => handleClipClick(clip, e)}
+                                    onContextMenu={e => handleClipContextMenu(clip.id, e)}
+                                    onTrimMouseDown={handleTrimMouseDown}
+                                />
+                            ))}
+                        </SortableContext>
+                    </DndContext>
+                ) : null
+            case 'voice':
+                return !trackStates.voice.hidden ? audioClips.map(c => (
+                    <AudioClipBlock key={`a-${c.id}`} clip={c} pixelsPerFrame={pixelsPerFrame} isSelected={timelineState.selectedClipId === c.id} />
+                )) : null
+            case 'subtitle':
+                return !trackStates.subtitle.hidden ? subtitleClips.map(c => (
+                    <SubtitleBlock key={`s-${c.id}`} clip={c} pixelsPerFrame={pixelsPerFrame} isSelected={timelineState.selectedClipId === c.id} />
+                )) : null
+            case 'effect':
+                return null
+            case 'bgm':
+                return !trackStates.bgm.hidden ? bgmClips.map(c => (
+                    <BgmClipBlock key={c.id} clip={c} pixelsPerFrame={pixelsPerFrame} fps={config.fps} />
+                )) : null
         }
     }
 
     return (
-        <div className="timeline" style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            padding: '12px',
-            background: 'var(--glass-bg-surface)',
-            borderRadius: '12px',
-            border: '1px solid var(--glass-stroke-base)',
-            height: '100%'
-        }}>
-            {/* 缩放控制 */}
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-            }}>
-                <span style={{ fontSize: '12px', color: 'var(--glass-text-secondary)' }}>{t('editor.timeline.zoomLabel')}</span>
-                <input
-                    type="range"
-                    min="0.5"
-                    max="3"
-                    step="0.1"
-                    value={timelineState.zoom}
-                    onChange={(e) => onZoomChange(parseFloat(e.target.value))}
-                    style={{ width: '100px' }}
-                />
-                <span style={{ fontSize: '12px', color: 'var(--glass-text-tertiary)' }}>
-                    {Math.round(timelineState.zoom * 100)}%
-                </span>
-            </div>
-
-            {/* 进度条 + 播放头 */}
-            <div
-                style={{
-                    position: 'relative',
-                    height: '24px',
-                    background: 'var(--glass-bg-muted)',
-                    border: '1px solid var(--glass-stroke-base)',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    marginLeft: '70px'  // 与轨道标签对齐
-                }}
-                onClick={(e) => {
-                    if (!onSeek || totalDuration === 0) return
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    const x = e.clientX - rect.left
-                    const percent = x / rect.width
-                    const frame = Math.round(percent * totalDuration)
-                    onSeek(Math.max(0, Math.min(totalDuration, frame)))
-                }}
-            >
-                {/* 已播放部分 */}
-                <div style={{
-                    position: 'absolute',
-                    left: 0,
-                    top: 0,
-                    height: '100%',
-                    width: `${playheadPosition}%`,
-                    background: 'linear-gradient(90deg, var(--glass-accent-from) 0%, var(--glass-accent-to) 100%)',
-                    borderRadius: '4px 0 0 4px',
-                    transition: timelineState.playing ? 'none' : 'width 0.1s'
-                }} />
-                {/* 播放头指示器 */}
-                <div style={{
-                    position: 'absolute',
-                    left: `${playheadPosition}%`,
-                    top: '-4px',
-                    bottom: '-4px',
-                    width: '3px',
-                    background: 'var(--glass-accent-to)',
-                    borderRadius: '2px',
-                    boxShadow: '0 0 8px var(--glass-accent-shadow-strong)',
-                    transform: 'translateX(-50%)',
-                    transition: timelineState.playing ? 'none' : 'left 0.1s'
-                }} />
-                {/* 时间标记 */}
-                <div style={{
-                    position: 'absolute',
-                    right: '8px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    fontSize: '10px',
-                    color: 'var(--glass-text-tertiary)'
-                }}>
-                    {framesToTime(timelineState.currentFrame, config.fps)} / {framesToTime(totalDuration, config.fps)}
-                </div>
-            </div>
-
-            {/* 视频轨道 */}
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                height: '56px',
-                background: 'var(--glass-bg-surface-strong)',
-                border: '1px solid var(--glass-stroke-base)',
-                borderRadius: '6px',
-                padding: '0 12px'
-            }}>
-                <span style={{
-                    fontSize: '12px',
-                    color: 'var(--glass-text-secondary)',
-                    width: '70px',
-                    flexShrink: 0
-                }}>
-                    {t('editor.timeline.videoTrack')}
-                </span>
-
-                <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
-                >
-                    <SortableContext
-                        items={clips.map(c => c.id)}
-                        strategy={horizontalListSortingStrategy}
-                    >
-                        <div style={{
-                            display: 'flex',
-                            gap: '4px',
-                            flex: 1,
-                            overflowX: 'auto',
-                            paddingRight: '12px'
-                        }}>
-                            {clips.map((clip, index) => (
-                                <SortableClip
-                                    key={clip.id}
-                                    clip={clip}
-                                    index={index}
-                                    isSelected={timelineState.selectedClipId === clip.id}
-                                    zoom={timelineState.zoom}
-                                    fps={config.fps}
-                                    onClick={() => onSelectClip(clip.id)}
+        <div className="flex flex-col h-full bg-[#0d0d1a] select-none">
+            {/* Main area */}
+            <div className="flex flex-1 min-h-0">
+                {/* Track headers */}
+                <div className="flex flex-col flex-shrink-0 bg-[#111122] border-r" style={{ width: TRACK_HEADER_WIDTH, borderColor: 'rgba(255,255,255,0.06)' }}>
+                    <div className="flex-shrink-0 border-b" style={{ height: RULER_HEIGHT, borderColor: 'rgba(255,255,255,0.06)' }} />
+                    {trackOrder.map(tid => {
+                        const tc = TRACK_CONFIGS.find(c => c.id === tid)!
+                        return (
+                            <React.Fragment key={tid}>
+                                <TrackHeader
+                                    config={{ ...tc, height: trackHeights[tid] }}
+                                    state={trackStates[tid]}
+                                    onToggleLock={() => toggleTrack(tid, 'locked')}
+                                    onToggleHide={() => toggleTrack(tid, 'hidden')}
+                                    onToggleMute={() => toggleTrack(tid, 'muted')}
                                 />
-                            ))}
-                            {clips.length === 0 && (
-                                <span style={{ fontSize: '12px', color: 'var(--glass-text-tertiary)' }}>
-                                    {t('editor.timeline.emptyHint')}
-                                </span>
-                            )}
-                        </div>
-                    </SortableContext>
-                </DndContext>
-            </div>
+                                {/* Resize handle */}
+                                <div
+                                    className="h-[3px] cursor-row-resize hover:bg-blue-500/30 transition-colors flex-shrink-0"
+                                    style={{ background: TRACK_BORDER }}
+                                    onMouseDown={e => handleTrackResizeStart(tid, e)}
+                                />
+                            </React.Fragment>
+                        )
+                    })}
+                </div>
 
-            {/* 配音轨道 (显示附属音频) */}
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                height: '40px',
-                background: 'var(--glass-bg-surface-strong)',
-                border: '1px solid var(--glass-stroke-base)',
-                borderRadius: '6px',
-                padding: '0 12px'
-            }}>
-                <span style={{
-                    fontSize: '12px',
-                    color: 'var(--glass-text-secondary)',
-                    width: '70px',
-                    flexShrink: 0
-                }}>
-                    {t('editor.timeline.audioTrack')}
-                </span>
-                <div style={{ display: 'flex', gap: '4px', flex: 1 }}>
-                    {clips.filter(c => c.attachment?.audio).map((clip) => (
-                        <div
-                            key={`audio-${clip.id}`}
-                            style={{
-                                width: `${clip.durationInFrames * timelineState.zoom * 2}px`,
-                                height: '28px',
-                                background: 'var(--glass-tone-success-bg)',
-                                borderRadius: '4px',
-                                fontSize: '10px',
-                                color: 'var(--glass-tone-success-fg)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                flexShrink: 0
-                            }}
-                        >
-                            {t('editor.timeline.audioBadge')}
-                        </div>
-                    ))}
+                {/* Scrollable timeline */}
+                <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-hidden">
+                    <div ref={contentRef} className="relative" style={{ width: totalWidth, minWidth: '100%' }}>
+                        <TimeRuler totalDurationFrames={totalDuration} pixelsPerFrame={pixelsPerFrame} fps={config.fps} totalWidth={totalWidth} onSeek={f => onSeek(snapFrame(f))} />
+
+                        {trackOrder.map(tid => (
+                            <React.Fragment key={tid}>
+                                <div
+                                    className="relative"
+                                    style={{
+                                        height: trackHeights[tid],
+                                        borderBottom: `1px solid ${TRACK_BORDER}`,
+                                        background: trackStates[tid].hidden ? 'transparent' : TRACK_CONFIGS.find(c => c.id === tid)!.colorDim,
+                                    }}
+                                >
+                                    {renderTrackContent(tid)}
+                                    {tid === 'video' && clips.length === 0 && (
+                                        <div className="absolute inset-0 flex items-center justify-center" style={{ color: 'rgba(255,255,255,0.15)', fontSize: 12 }}>
+                                            Drop clips here
+                                        </div>
+                                    )}
+                                </div>
+                                {/* Resize handle (content side) */}
+                                <div
+                                    className="h-[3px] cursor-row-resize hover:bg-blue-500/30 transition-colors flex-shrink-0"
+                                    style={{ background: TRACK_BORDER }}
+                                    onMouseDown={e => handleTrackResizeStart(tid, e)}
+                                />
+                            </React.Fragment>
+                        ))}
+
+                        {/* Playhead */}
+                        <Playhead x={playheadX} rulerHeight={RULER_HEIGHT} totalHeight={RULER_HEIGHT + totalTracksHeight + trackOrder.length * 3} onHeadMouseDown={handlePlayheadMouseDown} />
+
+                        {/* Split flash */}
+                        {splitFlash != null && (
+                            <div
+                                className="absolute pointer-events-none"
+                                style={{
+                                    left: splitFlash * pixelsPerFrame,
+                                    top: RULER_HEIGHT,
+                                    bottom: 0,
+                                    width: 2,
+                                    background: '#22d3ee',
+                                    boxShadow: '0 0 12px 3px rgba(34,211,238,0.6)',
+                                    animation: 'split-flash 0.6s ease-out forwards',
+                                    transform: 'translateX(-1px)',
+                                    zIndex: 60,
+                                }}
+                            />
+                        )}
+                    </div>
                 </div>
             </div>
 
-            {/* BGM 轨道 */}
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                height: '40px',
-                background: 'var(--glass-bg-surface-strong)',
-                border: '1px solid var(--glass-stroke-base)',
-                borderRadius: '6px',
-                padding: '0 12px'
-            }}>
-                <span style={{
-                    fontSize: '12px',
-                    color: 'var(--glass-text-secondary)',
-                    width: '70px',
-                    flexShrink: 0
-                }}>
-                    BGM
-                </span>
-            </div>
-        </div>
-    )
-}
+            {/* Minimap */}
+            <TimelineMinimap
+                totalDuration={totalDuration}
+                computedClips={computedClips}
+                bgmClips={bgmClips}
+                currentFrame={timelineState.currentFrame}
+                scrollLeft={scrollInfo.left}
+                viewportWidth={scrollInfo.width}
+                totalWidth={totalWidth}
+                onNavigate={handleMinimapNavigate}
+            />
 
-/**
- * 可拖拽的片段组件
- */
-interface SortableClipProps {
-    clip: VideoClip
-    index: number
-    isSelected: boolean
-    zoom: number
-    fps: number
-    onClick: () => void
-}
-
-const SortableClip: React.FC<SortableClipProps> = ({
-    clip,
-    index,
-    isSelected,
-    zoom,
-    fps,
-    onClick
-}) => {
-    const {
-        attributes,
-        listeners,
-        setNodeRef,
-        transform,
-        transition,
-        isDragging
-    } = useSortable({ id: clip.id })
-
-    const style: React.CSSProperties = {
-        transform: CSS.Transform.toString(transform),
-        transition,
-        width: `${clip.durationInFrames * zoom * 2}px`,
-        minWidth: '60px',
-        height: '40px',
-        background: isSelected
-            ? 'var(--glass-accent-from)'
-            : isDragging
-                ? 'var(--glass-bg-muted)'
-                : 'var(--glass-bg-surface)',
-        borderRadius: '4px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '11px',
-        color: isSelected ? 'var(--glass-text-on-accent)' : 'var(--glass-text-primary)',
-        cursor: isDragging ? 'grabbing' : 'grab',
-        flexShrink: 0,
-        border: isSelected ? '2px solid var(--glass-stroke-focus)' : '1px solid var(--glass-stroke-base)',
-        opacity: isDragging ? 0.8 : 1,
-        zIndex: isDragging ? 100 : 1,
-        position: 'relative'
-    }
-
-    return (
-        <div
-            ref={setNodeRef}
-            style={style}
-            onClick={onClick}
-            {...attributes}
-            {...listeners}
-        >
-            <span style={{ fontWeight: 'bold' }}>{index + 1}</span>
-            <span style={{
-                position: 'absolute',
-                bottom: '2px',
-                fontSize: '9px',
-                color: isSelected ? 'rgba(255, 255, 255, 0.8)' : 'var(--glass-text-tertiary)'
-            }}>
-                {framesToTime(clip.durationInFrames, fps)}
-            </span>
-
-            {/* 转场指示器 */}
-            {clip.transition && clip.transition.type !== 'none' && (
-                <div style={{
-                    position: 'absolute',
-                    right: '-6px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    width: '12px',
-                    height: '12px',
-                    background: 'var(--glass-tone-warning-fg)',
-                    borderRadius: '50%',
-                    fontSize: '8px',
-                    color: 'var(--glass-text-on-accent)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 10
-                }}>
-                    T
-                </div>
+            {/* Context menu */}
+            {contextMenu && (
+                <ClipContextMenu
+                    state={contextMenu}
+                    onAction={handleContextAction}
+                    onClose={() => setContextMenu(null)}
+                />
             )}
+
+            {/* Split flash keyframe (injected once) */}
+            <style>{`
+                @keyframes split-flash {
+                    0% { opacity: 1; box-shadow: 0 0 12px 3px rgba(34,211,238,0.6); }
+                    100% { opacity: 0; box-shadow: 0 0 0 0 transparent; }
+                }
+            `}</style>
         </div>
     )
 }

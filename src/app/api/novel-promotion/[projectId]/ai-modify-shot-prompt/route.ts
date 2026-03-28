@@ -72,7 +72,7 @@ export const POST = apiHandler(async (
   if (!currentPrompt || !modifyInstruction) {
     throw new ApiError('INVALID_PARAMS')
   }
-  if (project.mode !== 'novel-promotion') {
+  if (project.projectType !== 'novel-promotion') {
     throw new ApiError('INVALID_PARAMS')
   }
 

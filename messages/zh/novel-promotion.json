@@ -4,8 +4,11 @@
     "script": "剧本",
     "storyboard": "分镜",
     "video": "成片",
+    "voice": "配音",
     "editor": "AI剪辑",
-    "editorComingSoon": "开发中，关注我们获取最新消息"
+    "editorComingSoon": "开发中，关注我们获取最新消息",
+    "kanban": "看板",
+    "dashboard": "数据"
   },
   "buttons": {
     "assetLibrary": "资产库",

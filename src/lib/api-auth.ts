@@ -342,6 +342,70 @@ export async function requireProjectAuthLight(
 }
 
 // ============================================================
+// 项目访问验证（owner + ProjectMember）
+// ============================================================
+
+export interface ProjectAccessContext {
+    session: AuthSession
+    project: {
+        id: string
+        userId: string
+        name: string
+        projectType: string
+        [key: string]: unknown
+    }
+    role: 'owner' | string
+}
+
+/**
+ * 验证项目访问权限（支持 owner 和 ProjectMember）
+ * 适用于跨项目类型（CG + NP）的通用 API（chat、members、share、data 等）
+ *
+ * - owner 直接通过
+ * - 非 owner 则查 ProjectMember 表，存在即通过并返回成员角色
+ */
+export async function requireProjectAccess(
+    projectId: string,
+): Promise<ProjectAccessContext | NextResponse> {
+    const session = await getAuthSession()
+    if (!session?.user?.id) {
+        return unauthorized()
+    }
+    bindAuthLogContext(session, projectId)
+
+    const project = await withPrismaRetry(() =>
+        prisma.project.findUnique({
+            where: { id: projectId },
+        }),
+    )
+
+    if (!project) {
+        return notFound('Project')
+    }
+
+    if (project.userId === session.user.id) {
+        return { session, project: project as ProjectAccessContext['project'], role: 'owner' }
+    }
+
+    const membership = await withPrismaRetry(() =>
+        prisma.projectMember.findUnique({
+            where: {
+                projectId_userId: {
+                    projectId,
+                    userId: session.user.id,
+                },
+            },
+        }),
+    )
+
+    if (!membership) {
+        return forbidden()
+    }
+
+    return { session, project: project as ProjectAccessContext['project'], role: membership.role }
+}
+
+// ============================================================
 // 类型守卫
 // ============================================================
 

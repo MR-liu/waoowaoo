@@ -20,26 +20,62 @@ interface PanelData {
     duration?: number
 }
 
+interface VoiceLineData {
+    id: string
+    speaker: string
+    content: string
+    audioUrl?: string | null
+    matchedPanelId?: string | null
+    matchedStoryboardId?: string | null
+    matchedPanelIndex?: number | null
+}
+
 /**
  * 从已生成的视频面板创建编辑器项目
  */
+function resolveResolution(videoRatio?: string): { width: number; height: number } {
+    switch (videoRatio) {
+        case '9:16': return { width: 1080, height: 1920 }
+        case '1:1':  return { width: 1080, height: 1080 }
+        case '4:5':  return { width: 1080, height: 1350 }
+        case '3:4':  return { width: 1080, height: 1440 }
+        case '2:3':  return { width: 1080, height: 1620 }
+        case '4:3':  return { width: 1440, height: 1080 }
+        case '3:2':  return { width: 1620, height: 1080 }
+        case '21:9': return { width: 2520, height: 1080 }
+        case '16:9':
+        default:     return { width: 1920, height: 1080 }
+    }
+}
+
 export function createProjectFromPanels(
     episodeId: string,
     panels: PanelData[],
-    voiceLines?: Array<{ id: string; speaker: string; content: string; audioUrl?: string | null }>
+    voiceLines?: VoiceLineData[],
+    videoRatio?: string,
 ): VideoEditorProject {
-    // 过滤出有视频的面板
     const videoPanels = panels.filter(p => p.videoUrl)
 
-    // 创建视频片段
+    const voiceLookup = new Map<string, VoiceLineData>()
+    if (voiceLines) {
+        for (const vl of voiceLines) {
+            if (vl.matchedPanelId) {
+                voiceLookup.set(vl.matchedPanelId, vl)
+            } else if (vl.matchedStoryboardId != null && vl.matchedPanelIndex != null) {
+                voiceLookup.set(`${vl.matchedStoryboardId}:${vl.matchedPanelIndex}`, vl)
+            }
+        }
+    }
+
     const timeline: VideoClip[] = videoPanels.map((panel, index) => {
-        // 查找匹配的配音（简单匹配：按索引）
-        const matchedVoice = voiceLines?.[index]
+        const panelId = panel.id || `${panel.storyboardId}-${panel.panelIndex ?? index}`
+        const compositeKey = `${panel.storyboardId}:${panel.panelIndex ?? index}`
+        const matchedVoice = voiceLookup.get(panelId) ?? voiceLookup.get(compositeKey)
 
         return {
             id: `clip_${panel.id || panel.storyboardId}_${panel.panelIndex ?? index}`,
             src: panel.videoUrl!,
-            durationInFrames: Math.round((panel.duration || 3) * 30), // 默认 3 秒，30fps
+            durationInFrames: Math.round((panel.duration || 3) * 30),
             attachment: {
                 audio: matchedVoice?.audioUrl ? {
                     src: matchedVoice.audioUrl,
@@ -53,15 +89,17 @@ export function createProjectFromPanels(
             },
             transition: index < videoPanels.length - 1 ? {
                 type: 'dissolve' as const,
-                durationInFrames: 15 // 0.5s @ 30fps
+                durationInFrames: 15
             } : undefined,
             metadata: {
-                panelId: panel.id || `${panel.storyboardId}-${panel.panelIndex ?? index}`,
+                panelId,
                 storyboardId: panel.storyboardId,
                 description: panel.description || undefined
             }
         }
     })
+
+    const { width, height } = resolveResolution(videoRatio)
 
     return {
         id: `editor_${episodeId}_${Date.now()}`,
@@ -69,8 +107,8 @@ export function createProjectFromPanels(
         schemaVersion: '1.0',
         config: {
             fps: 30,
-            width: 1920,
-            height: 1080
+            width,
+            height,
         },
         timeline,
         bgmTrack: []

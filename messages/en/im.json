@@ -1,0 +1,28 @@
+{
+  "teamChat": "Team Chat",
+  "onlineCount": "{count} online",
+  "tabs": {
+    "chat": "Chat",
+    "members": "Members"
+  },
+  "emptyChat": {
+    "title": "Start a conversation",
+    "description": "Communicate with team members about project progress and creative ideas"
+  },
+  "input": {
+    "placeholder": "Type a message...",
+    "attach": "Add attachment",
+    "mention": "Mention member"
+  },
+  "members": {
+    "invite": "Invite Members",
+    "online": "Online",
+    "offline": "Offline",
+    "empty": "No members yet. Invite your team to join.",
+    "usernamePlaceholder": "Enter username"
+  },
+  "panel": {
+    "collapse": "Collapse panel",
+    "expand": "Expand panel"
+  }
+}

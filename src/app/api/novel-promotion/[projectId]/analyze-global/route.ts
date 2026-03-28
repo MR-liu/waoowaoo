@@ -37,7 +37,7 @@ export const POST = apiHandler(async (
   const body = await readRequestJsonObject(request)
   const taskPayload = buildAnalyzeGlobalTaskPayload(body)
 
-  if (project.mode !== 'novel-promotion') {
+  if (project.projectType !== 'novel-promotion') {
     throw new ApiError('INVALID_PARAMS')
   }
 

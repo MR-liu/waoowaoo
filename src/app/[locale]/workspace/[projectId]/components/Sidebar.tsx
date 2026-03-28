@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl'
 
 import { useState, useRef, useEffect } from 'react'
 import { AppIcon } from '@/components/ui/icons'
+import { useToast } from '@/contexts/ToastContext'
 
 interface Episode {
     id: string
@@ -38,6 +39,7 @@ export default function Sidebar({
     isGlobalAssetsView
 }: SidebarProps) {
     const t = useTranslations('workspaceDetail')
+    const { showToast } = useToast()
     const [isExpanded, setIsExpanded] = useState(false)
     void projectId
     const [isCreating, setIsCreating] = useState(false)
@@ -83,7 +85,6 @@ export default function Sidebar({
         }
     }, [isDragging])
 
-    // 创建剧集
     const handleCreate = async () => {
         if (!newEpisodeName.trim()) return
         try {
@@ -92,10 +93,10 @@ export default function Sidebar({
             setIsCreating(false)
         } catch (err) {
             _ulogError('创建剧集失败:', err)
+            showToast(t('sidebar.createFailed'), 'error')
         }
     }
 
-    // 重命名剧集
     const handleRename = async (id: string) => {
         if (!editingName.trim()) return
         try {
@@ -104,16 +105,17 @@ export default function Sidebar({
             setEditingName('')
         } catch (err) {
             _ulogError('重命名失败:', err)
+            showToast(t('sidebar.renameFailed'), 'error')
         }
     }
 
-    // 删除剧集
     const handleDelete = async (id: string) => {
         try {
             await onEpisodeDelete(id)
             setDeleteConfirmId(null)
         } catch (err) {
             _ulogError('删除失败:', err)
+            showToast(t('sidebar.deleteFailed'), 'error')
         }
     }
 

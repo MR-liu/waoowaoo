@@ -15,12 +15,12 @@ export async function createFixtureUser() {
   })
 }
 
-export async function createFixtureProject(userId: string, mode: 'novel-promotion' | 'general' = 'novel-promotion') {
+export async function createFixtureProject(userId: string, projectType: 'novel-promotion' | 'general' = 'novel-promotion') {
   const id = suffix()
   return await prisma.project.create({
     data: {
       userId,
-      mode,
+      projectType,
       name: `project_${id}`,
     },
   })

@@ -19,6 +19,9 @@
     "rename": "Rename",
     "newEpisodePlaceholder": "Enter episode name...",
     "create": "Create",
-    "addEpisode": "Add Episode"
+    "addEpisode": "Add Episode",
+    "createFailed": "Failed to create episode",
+    "renameFailed": "Failed to rename",
+    "deleteFailed": "Failed to delete"
   }
 }

@@ -12,10 +12,11 @@ const CONTRACT_TEST_BY_GROUP: Record<RouteCatalogEntry['contractGroup'], string>
   'direct-submit-routes': 'tests/integration/api/contract/direct-submit-routes.test.ts',
   'crud-asset-hub-routes': 'tests/integration/api/contract/crud-routes.test.ts',
   'crud-novel-promotion-routes': 'tests/integration/api/contract/crud-routes.test.ts',
+  'crud-cg-routes': 'tests/integration/api/contract/cg-routes.test.ts',
   'task-infra-routes': 'tests/integration/api/contract/task-infra-routes.test.ts',
-  'user-project-routes': 'tests/integration/api/contract/crud-routes.test.ts',
-  'auth-routes': 'tests/integration/api/contract/crud-routes.test.ts',
-  'infra-routes': 'tests/integration/api/contract/crud-routes.test.ts',
+  'user-project-routes': 'tests/integration/api/contract/user-project-routes.test.ts',
+  'auth-routes': 'tests/integration/api/contract/auth-routes.test.ts',
+  'infra-routes': 'tests/integration/api/contract/infra-routes.test.ts',
 }
 
 function resolveChainTest(routeFile: string): string {

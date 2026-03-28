@@ -1,0 +1,11 @@
+{
+  "columns": {
+    "pending": "To Do",
+    "inProgress": "In Progress",
+    "completed": "Done"
+  },
+  "empty": {
+    "title": "No Tasks Yet",
+    "description": "Generate storyboards to see the kanban board"
+  }
+}

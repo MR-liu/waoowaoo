@@ -19,6 +19,7 @@ export const USER_ERROR_MESSAGES_ZH: Record<UnifiedErrorCode, string> = {
   GENERATION_FAILED: '生成失败，请稍后重试。',
   WATCHDOG_TIMEOUT: '任务执行超时，系统已终止该任务。',
   WORKER_EXECUTION_ERROR: '任务执行失败，请稍后重试。',
+  NOT_IMPLEMENTED: '该功能尚未实现。',
   INTERNAL_ERROR: '系统内部错误，请稍后重试。',
 }
 

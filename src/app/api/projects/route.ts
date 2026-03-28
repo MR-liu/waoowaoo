@@ -17,15 +17,27 @@ export const GET = apiHandler(async (request: NextRequest) => {
   const pageSize = parseInt(searchParams.get('pageSize') || '12', 10)
   const search = searchParams.get('search') || ''
 
-  // 构建查询条件
-  const where: Record<string, unknown> = { userId: session.user.id }
+  // 构建查询条件：owner 或 ProjectMember
+  const ownerOrMember = {
+    OR: [
+      { userId: session.user.id },
+      { members: { some: { userId: session.user.id } } },
+    ],
+  }
 
-  // 如果有搜索关键词，搜索名称和描述
+  const where: Record<string, unknown> = { ...ownerOrMember }
+
   if (search.trim()) {
-    where.OR = [
-      { name: { contains: search.trim(), mode: 'insensitive' } },
-      { description: { contains: search.trim(), mode: 'insensitive' } }
+    where.AND = [
+      ownerOrMember,
+      {
+        OR: [
+          { name: { contains: search.trim() } },
+          { description: { contains: search.trim() } },
+        ],
+      },
     ]
+    delete where.OR
   }
 
   // ⚡ 并行执行：获取总数 + 分页数据
@@ -163,7 +175,17 @@ export const POST = apiHandler(async (request: NextRequest) => {
   if (isErrorResponse(authResult)) return authResult
   const { session } = authResult
 
-  const { name, description } = await request.json()
+  const body = await request.json() as {
+    name?: string
+    description?: string
+    projectType?: string
+    resolution?: string
+    frameRate?: string
+    colorSpace?: string
+  }
+
+  const { name, description } = body
+  const projectType = body.projectType === 'cg' ? 'cg' : 'novel-promotion'
 
   if (!name || name.trim().length === 0) {
     throw new ApiError('INVALID_PARAMS')
@@ -177,42 +199,56 @@ export const POST = apiHandler(async (request: NextRequest) => {
     throw new ApiError('INVALID_PARAMS')
   }
 
-  // 获取用户偏好配置
   const userPreference = await prisma.userPreference.findUnique({
     where: { userId: session.user.id }
   })
 
-  // 创建基础项目（mode 固定为 novel-promotion）
   const project = await prisma.project.create({
     data: {
       name: name.trim(),
       description: description?.trim() || null,
-      mode: 'novel-promotion',
-      userId: session.user.id
+      projectType,
+      userId: session.user.id,
+      resolution: body.resolution || null,
+      frameRate: body.frameRate || null,
+      colorSpace: body.colorSpace || null,
     }
   })
 
-  // 创建 novel-promotion 数据表，使用用户偏好作为默认值
-  // 注意：不再自动创建默认剧集，由用户在选择界面决定：
-  // - 手动创作 → 创建第一个空白剧集
-  // - 智能导入 → AI 分析后批量创建剧集
-  // 🔥 artStylePrompt 通过实时查询获取，不再存储到数据库
-  await prisma.novelPromotionProject.create({
-    data: {
-      projectId: project.id,
-      ...(userPreference && {
-        analysisModel: userPreference.analysisModel,
-        characterModel: userPreference.characterModel,
-        locationModel: userPreference.locationModel,
-        storyboardModel: userPreference.storyboardModel,
-        editModel: userPreference.editModel,
-        videoModel: userPreference.videoModel,
-        videoRatio: userPreference.videoRatio,
-        artStyle: userPreference.artStyle || 'american-comic',
-        ttsRate: userPreference.ttsRate
-      })
-    }
-  })
+  if (projectType === 'novel-promotion') {
+    await prisma.novelPromotionProject.create({
+      data: {
+        projectId: project.id,
+        ...(userPreference && {
+          analysisModel: userPreference.analysisModel,
+          characterModel: userPreference.characterModel,
+          locationModel: userPreference.locationModel,
+          storyboardModel: userPreference.storyboardModel,
+          editModel: userPreference.editModel,
+          videoModel: userPreference.videoModel,
+          videoRatio: userPreference.videoRatio,
+          artStyle: userPreference.artStyle || 'american-comic',
+          ttsRate: userPreference.ttsRate
+        })
+      }
+    })
+  }
+
+  if (projectType === 'cg') {
+    const defaultSteps = [
+      { name: 'Modeling', code: 'mdl', sortOrder: 0 },
+      { name: 'Rigging', code: 'rig', sortOrder: 1 },
+      { name: 'Animation', code: 'anim', sortOrder: 2 },
+      { name: 'Lighting', code: 'lgt', sortOrder: 3 },
+      { name: 'Compositing', code: 'comp', sortOrder: 4 },
+    ]
+    await prisma.pipelineStep.createMany({
+      data: defaultSteps.map(step => ({
+        projectId: project.id,
+        ...step,
+      })),
+    })
+  }
 
   return NextResponse.json({ project }, { status: 201 })
 })

@@ -249,7 +249,7 @@ export const PATCH = apiHandler(async (
 
   const body = await request.json()
 
-  if (project.mode !== 'novel-promotion') {
+  if (project.projectType !== 'novel-promotion') {
     throw new ApiError('INVALID_PARAMS')
   }
 

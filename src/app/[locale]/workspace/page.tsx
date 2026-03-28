@@ -11,6 +11,9 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import TaskStatusInline from '@/components/task/TaskStatusInline'
 import { resolveTaskPresentationState } from '@/lib/task/presentation'
 import { AppIcon, IconGradientDefs } from '@/components/ui/icons'
+import ProducerDashboard from './components/ProducerDashboard'
+import DirectorReviewQueue from './components/DirectorReviewQueue'
+import ArtistTaskList from './components/ArtistTaskList'
 
 interface ProjectStats {
   episodes: number
@@ -35,6 +38,15 @@ interface Pagination {
   pageSize: number
   total: number
   totalPages: number
+}
+
+type SystemRole = 'admin' | 'producer' | 'director' | 'supervisor' | 'coordinator' | 'artist'
+
+interface DashboardData {
+  systemRole: SystemRole
+  projects: { id: string; name: string; projectType: string; updatedAt: string }[]
+  assignedTasks: { id: string; projectId: string; projectName: string; shotCode: string | null; assetCode: string | null; stepName: string; status: string; dueDate: string | null }[]
+  reviewQueue: { id: string; projectId: string; projectName: string; entityName: string; versionNumber: number; thumbnailUrl: string | null; submittedBy: string; submittedAt: string }[]
 }
 
 const PAGE_SIZE = 7 // 加上新建项目按钮正好8个，4列布局下2行
@@ -70,6 +82,7 @@ export default function WorkspacePage() {
   const [pagination, setPagination] = useState<Pagination>({ page: 1, pageSize: PAGE_SIZE, total: 0, totalPages: 0 })
   const [searchQuery, setSearchQuery] = useState('')
   const [searchInput, setSearchInput] = useState('')
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
 
   const t = useTranslations('workspace')
   const tc = useTranslations('common')
@@ -107,6 +120,14 @@ export default function WorkspacePage() {
       setLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    if (!session) return
+    fetch('/api/user/dashboard')
+      .then(res => { if (!res.ok) throw new Error(`Dashboard fetch failed: ${res.status}`); return res.json() })
+      .then((data: DashboardData) => setDashboardData(data))
+      .catch(err => _ulogError('获取仪表盘数据失败:', err))
+  }, [session])
 
   // 初始加载和搜索/分页变化时重新获取
   useEffect(() => {
@@ -264,11 +285,9 @@ export default function WorkspacePage() {
 
   return (
     <div className="glass-page glass-atmosphere min-h-screen">
-      {/* Header - 统一导航栏 */}
       <Navbar />
 
-      {/* Main Content */}
-      <main className="glass-shell px-2 sm:px-4 py-8">
+      <main className="px-4 sm:px-6 py-8 max-w-7xl mx-auto">
         <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-[var(--glass-text-primary)] mb-2">{t('title')}</h1>
@@ -305,6 +324,33 @@ export default function WorkspacePage() {
             )}
           </div>
         </div>
+
+        {/* Role-based Dashboard */}
+        {dashboardData && (() => {
+          const role = dashboardData.systemRole
+          if (role === 'producer' || role === 'admin') {
+            return (
+              <div className="mb-8">
+                <ProducerDashboard projects={dashboardData.projects} onCreateProject={() => setShowCreateModal(true)} />
+              </div>
+            )
+          }
+          if (role === 'director' || role === 'supervisor') {
+            return (
+              <div className="mb-8">
+                <DirectorReviewQueue items={dashboardData.reviewQueue} />
+              </div>
+            )
+          }
+          if (role === 'artist' || role === 'coordinator') {
+            return (
+              <div className="mb-8">
+                <ArtistTaskList tasks={dashboardData.assignedTasks} />
+              </div>
+            )
+          }
+          return null
+        })()}
 
         {/* Projects Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

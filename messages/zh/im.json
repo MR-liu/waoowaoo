@@ -1,0 +1,28 @@
+{
+  "teamChat": "团队协作",
+  "onlineCount": "{count} 人在线",
+  "tabs": {
+    "chat": "消息",
+    "members": "成员"
+  },
+  "emptyChat": {
+    "title": "开始对话",
+    "description": "与团队成员沟通项目进展、分享创意灵感"
+  },
+  "input": {
+    "placeholder": "输入消息...",
+    "attach": "添加附件",
+    "mention": "提及成员"
+  },
+  "members": {
+    "invite": "邀请成员",
+    "online": "在线",
+    "offline": "离线",
+    "empty": "暂无成员，邀请团队成员加入",
+    "usernamePlaceholder": "输入用户名"
+  },
+  "panel": {
+    "collapse": "收起面板",
+    "expand": "展开面板"
+  }
+}

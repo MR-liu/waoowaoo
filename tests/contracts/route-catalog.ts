@@ -1,6 +1,7 @@
 export type RouteCategory =
   | 'asset-hub'
   | 'novel-promotion'
+  | 'cg'
   | 'projects'
   | 'tasks'
   | 'user'
@@ -13,6 +14,7 @@ export type RouteContractGroup =
   | 'direct-submit-routes'
   | 'crud-asset-hub-routes'
   | 'crud-novel-promotion-routes'
+  | 'crud-cg-routes'
   | 'task-infra-routes'
   | 'user-project-routes'
   | 'auth-routes'
@@ -25,6 +27,8 @@ export type RouteCatalogEntry = {
 }
 
 const ROUTE_FILES = [
+  'src/app/api/admin/audit-logs/route.ts',
+  'src/app/api/admin/security/compliance/route.ts',
   'src/app/api/admin/users/[userId]/route.ts',
   'src/app/api/admin/users/route.ts',
   'src/app/api/asset-hub/ai-design-character/route.ts',
@@ -55,6 +59,25 @@ const ROUTE_FILES = [
   'src/app/api/asset-hub/voices/upload/route.ts',
   'src/app/api/auth/[...nextauth]/route.ts',
   'src/app/api/auth/register/route.ts',
+  'src/app/api/cg/[projectId]/ai/breakdown/route.ts',
+  'src/app/api/cg/[projectId]/ai/schedule/route.ts',
+  'src/app/api/cg/[projectId]/approve/route.ts',
+  'src/app/api/cg/[projectId]/assets/route.ts',
+  'src/app/api/cg/[projectId]/assets/variations/route.ts',
+  'src/app/api/cg/[projectId]/ayon/route.ts',
+  'src/app/api/cg/[projectId]/dashboard/route.ts',
+  'src/app/api/cg/[projectId]/filebox/route.ts',
+  'src/app/api/cg/[projectId]/gantt/route.ts',
+  'src/app/api/cg/[projectId]/notes/route.ts',
+  'src/app/api/cg/[projectId]/pipeline-steps/route.ts',
+  'src/app/api/cg/[projectId]/playlists/[playlistId]/items/route.ts',
+  'src/app/api/cg/[projectId]/playlists/route.ts',
+  'src/app/api/cg/[projectId]/production-tasks/route.ts',
+  'src/app/api/cg/[projectId]/search/route.ts',
+  'src/app/api/cg/[projectId]/sequences/route.ts',
+  'src/app/api/cg/[projectId]/shots/route.ts',
+  'src/app/api/cg/[projectId]/versions/route.ts',
+  'src/app/api/cg/[projectId]/vfs/route.ts',
   'src/app/api/cos/image/route.ts',
   'src/app/api/files/[...path]/route.ts',
   'src/app/api/novel-promotion/[projectId]/ai-create-character/route.ts',
@@ -79,7 +102,9 @@ const ROUTE_FILES = [
   'src/app/api/novel-promotion/[projectId]/download-images/route.ts',
   'src/app/api/novel-promotion/[projectId]/download-videos/route.ts',
   'src/app/api/novel-promotion/[projectId]/download-voices/route.ts',
+  'src/app/api/novel-promotion/[projectId]/editor/render/route.ts',
   'src/app/api/novel-promotion/[projectId]/editor/route.ts',
+  'src/app/api/novel-promotion/[projectId]/export-storyboard/route.ts',
   'src/app/api/novel-promotion/[projectId]/episodes/[episodeId]/route.ts',
   'src/app/api/novel-promotion/[projectId]/episodes/batch/route.ts',
   'src/app/api/novel-promotion/[projectId]/episodes/route.ts',
@@ -126,10 +151,15 @@ const ROUTE_FILES = [
   'src/app/api/novel-promotion/[projectId]/voice-generate/route.ts',
   'src/app/api/novel-promotion/[projectId]/voice-lines/route.ts',
   'src/app/api/projects/[projectId]/assets/route.ts',
+  'src/app/api/projects/[projectId]/chat/read/route.ts',
+  'src/app/api/projects/[projectId]/chat/route.ts',
   'src/app/api/projects/[projectId]/costs/route.ts',
   'src/app/api/projects/[projectId]/data/route.ts',
+  'src/app/api/projects/[projectId]/members/route.ts',
   'src/app/api/projects/[projectId]/route.ts',
+  'src/app/api/projects/[projectId]/share/route.ts',
   'src/app/api/projects/route.ts',
+  'src/app/api/share/[shareCode]/route.ts',
   'src/app/api/sse/route.ts',
   'src/app/api/system/boot-id/route.ts',
   'src/app/api/task-target-states/route.ts',
@@ -142,8 +172,10 @@ const ROUTE_FILES = [
   'src/app/api/user/balance/route.ts',
   'src/app/api/user/costs/details/route.ts',
   'src/app/api/user/costs/route.ts',
+  'src/app/api/user/dashboard/route.ts',
   'src/app/api/user/models/route.ts',
   'src/app/api/user/transactions/route.ts',
+  'src/app/api/voice-presets/route.ts',
 ] as const
 
 function resolveCategory(routeFile: string): RouteCategory {
@@ -153,8 +185,10 @@ function resolveCategory(routeFile: string): RouteCategory {
   if (routeFile.startsWith('src/app/api/projects/')) return 'projects'
   if (routeFile.startsWith('src/app/api/tasks/') || routeFile === 'src/app/api/task-target-states/route.ts') return 'tasks'
   if (routeFile.startsWith('src/app/api/user/') || routeFile === 'src/app/api/user-preference/route.ts') return 'user'
+  if (routeFile.startsWith('src/app/api/cg/')) return 'cg'
   if (routeFile.startsWith('src/app/api/auth/')) return 'auth'
   if (routeFile.startsWith('src/app/api/system/')) return 'system'
+  if (routeFile.startsWith('src/app/api/share/')) return 'infra'
   return 'infra'
 }
 
@@ -191,8 +225,15 @@ function resolveContractGroup(routeFile: string): RouteContractGroup {
   ) {
     return 'direct-submit-routes'
   }
+  if (
+    routeFile.includes('admin/security/compliance')
+    || routeFile.includes('admin/audit-logs')
+  ) {
+    return 'infra-routes'
+  }
   if (routeFile.startsWith('src/app/api/admin/')) return 'user-project-routes'
   if (routeFile.startsWith('src/app/api/asset-hub/')) return 'crud-asset-hub-routes'
+  if (routeFile.startsWith('src/app/api/cg/')) return 'crud-cg-routes'
   if (routeFile.startsWith('src/app/api/novel-promotion/')) return 'crud-novel-promotion-routes'
   if (
     routeFile.startsWith('src/app/api/tasks/')

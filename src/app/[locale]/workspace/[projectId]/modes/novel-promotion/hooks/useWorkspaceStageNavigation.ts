@@ -60,13 +60,9 @@ export function useWorkspaceStageNavigation({
     { id: 'script', icon: 'A', label: t('stages.script'), status: getStageStatus('assets') },
     { id: 'storyboard', icon: 'B', label: t('stages.storyboard'), status: getStageStatus('storyboard') },
     { id: 'videos', icon: 'V', label: t('stages.video'), status: getStageStatus('videos') },
-    {
-      id: 'editor',
-      icon: 'E',
-      label: t('stages.editor'),
-      status: 'empty',
-      disabled: true,
-      disabledLabel: t('stages.editorComingSoon'),
-    },
+    { id: 'voice', icon: 'M', label: t('stages.voice'), status: getStageStatus('voice') },
+    { id: 'editor', icon: 'E', label: t('stages.editor'), status: getStageStatus('editor') },
+    { id: 'kanban', icon: 'K', label: t('stages.kanban'), status: 'empty' },
+    { id: 'dashboard', icon: 'D', label: t('stages.dashboard'), status: 'empty' },
   ]
 }

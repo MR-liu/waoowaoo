@@ -4,8 +4,11 @@
     "script": "Script",
     "storyboard": "Storyboard",
     "video": "Video",
+    "voice": "Voice",
     "editor": "AI Editor",
-    "editorComingSoon": "Coming soon, follow us for updates"
+    "editorComingSoon": "Coming soon, follow us for updates",
+    "kanban": "Kanban",
+    "dashboard": "Dashboard"
   },
   "buttons": {
     "assetLibrary": "Asset Library",

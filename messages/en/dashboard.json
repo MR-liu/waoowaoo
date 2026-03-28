@@ -1,0 +1,43 @@
+{
+  "stats": {
+    "clips": "Clips",
+    "storyboards": "Storyboards",
+    "images": "Images",
+    "videos": "Videos"
+  },
+  "burndown": {
+    "title": "Production Progress",
+    "stages": {
+      "storyboard": "Storyboard",
+      "image": "Image",
+      "video": "Video",
+      "voice": "Voice"
+    }
+  },
+  "producer": {
+    "title": "Producer Dashboard",
+    "subtitle": "Project portfolio, budget & schedule management",
+    "newProject": "New Project",
+    "totalProjects": "Total Projects",
+    "cgProjects": "CG Projects",
+    "npProjects": "Promo Projects",
+    "totalCost": "Total Cost",
+    "recentProjects": "Recent Projects",
+    "noProjects": "No projects yet. Create one above."
+  },
+  "director": {
+    "title": "Review Station",
+    "subtitle": "Pending reviews, annotations & feedback",
+    "pendingReview": "Pending Review",
+    "allClear": "All caught up! Nothing to review."
+  },
+  "artist": {
+    "title": "My Tasks",
+    "subtitle": "Assigned tasks & deliverables",
+    "todo": "To Do",
+    "inProgress": "In Progress",
+    "needsRevision": "Needs Revision",
+    "myTasks": "Task List",
+    "noTasks": "No tasks assigned yet."
+  }
+}

@@ -139,7 +139,7 @@ export function CapsuleNav({ items, activeId, onItemClick, projectId, episodeId 
 
     return (
         <motion.nav
-            className="sticky top-20 z-50 mx-auto w-fit animate-fadeInDown"
+            className="z-30 mx-auto w-fit"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={MOTION_PRESETS.spring.gentle}
@@ -226,7 +226,7 @@ export function EpisodeSelector({
     if (!currentEp) return null
 
     return (
-        <div className="fixed top-20 left-6 z-[60]" ref={menuRef}>
+        <div className="relative z-[60]" ref={menuRef}>
             <motion.button
                 onClick={() => setIsOpen(!isOpen)}
                 className="glass-btn-base glass-btn-secondary flex items-center gap-3 px-4 py-3 transition-all group"

@@ -152,67 +152,77 @@ export default function WorkspaceHeaderShell({
         text={globalAssetText}
         onChange={(value) => { onUpdateConfig('globalAssetText', value) }}
       />
-      {episodes.length > 0 && currentEpisodeId && (() => {
-        const getNum = (name: string) => { const m = name.match(/\d+/); return m ? parseInt(m[0], 10) : Infinity }
-        const sorted = [...episodes].sort((a, b) => {
-          const d = getNum(a.name) - getNum(b.name)
-          return d !== 0 ? d : a.name.localeCompare(b.name, 'zh')
-        })
-        return (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={MOTION_PRESETS.spring.gentle}
-          >
-            <EpisodeSelector
-              projectName={projectName}
-              episodes={sorted.map((ep) => ({
-                id: ep.id,
-                title: ep.name,
-                summary: ep.description ?? undefined,
-                status: {
-                  script: ep.clips?.length ? 'ready' as const : 'empty' as const,
-                  visual: ep.storyboards?.some((sb) => sb.panels?.some((panel) => panel.videoUrl)) ? 'ready' as const : 'empty' as const,
-                },
-              }))}
-              currentId={currentEpisodeId}
-              onSelect={(id) => onEpisodeSelect?.(id)}
-              onAdd={onEpisodeCreate}
-              onRename={(id, newName) => onEpisodeRename?.(id, newName)}
-              onDelete={onEpisodeDelete}
-            />
-          </motion.div>
-        )
-      })()}
+      <div className="sticky top-0 z-30 bg-[var(--glass-bg-canvas)]/80 backdrop-blur-md border-b border-[var(--glass-stroke-soft)]">
+        <div className="flex items-center justify-between gap-4 px-4 py-2">
+          <div className="flex-shrink-0">
+            {episodes.length > 0 && currentEpisodeId && (() => {
+              const getNum = (name: string) => { const m = name.match(/\d+/); return m ? parseInt(m[0], 10) : Infinity }
+              const sorted = [...episodes].sort((a, b) => {
+                const d = getNum(a.name) - getNum(b.name)
+                return d !== 0 ? d : a.name.localeCompare(b.name, 'zh')
+              })
+              return (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={MOTION_PRESETS.spring.gentle}
+                >
+                  <EpisodeSelector
+                    projectName={projectName}
+                    episodes={sorted.map((ep) => ({
+                      id: ep.id,
+                      title: ep.name,
+                      summary: ep.description ?? undefined,
+                      status: {
+                        script: ep.clips?.length ? 'ready' as const : 'empty' as const,
+                        visual: ep.storyboards?.some((sb) => sb.panels?.some((panel) => panel.videoUrl)) ? 'ready' as const : 'empty' as const,
+                      },
+                    }))}
+                    currentId={currentEpisodeId}
+                    onSelect={(id) => onEpisodeSelect?.(id)}
+                    onAdd={onEpisodeCreate}
+                    onRename={(id, newName) => onEpisodeRename?.(id, newName)}
+                    onDelete={onEpisodeDelete}
+                  />
+                </motion.div>
+              )
+            })()}
+          </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={MOTION_PRESETS.spring.gentle}
-      >
-        <CapsuleNav
-          items={capsuleNavItems}
-          activeId={currentStage}
-          onItemClick={onStageChange}
-          projectId={projectId}
-          episodeId={episodeId}
-        />
-      </motion.div>
+          <div className="flex-1 flex justify-center min-w-0">
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={MOTION_PRESETS.spring.gentle}
+            >
+              <CapsuleNav
+                items={capsuleNavItems}
+                activeId={currentStage}
+                onItemClick={onStageChange}
+                projectId={projectId}
+                episodeId={episodeId}
+              />
+            </motion.div>
+          </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={MOTION_PRESETS.spring.gentle}
-      >
-        <WorkspaceTopActions
-          onOpenAssetLibrary={onOpenAssetLibrary}
-          onOpenSettings={onOpenSettingsModal}
-          onRefresh={onRefresh}
-          assetLibraryLabel={assetLibraryLabel}
-          settingsLabel={settingsLabel}
-          refreshTitle={refreshTitle}
-        />
-      </motion.div>
+          <div className="flex-shrink-0">
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={MOTION_PRESETS.spring.gentle}
+            >
+              <WorkspaceTopActions
+                onOpenAssetLibrary={onOpenAssetLibrary}
+                onOpenSettings={onOpenSettingsModal}
+                onRefresh={onRefresh}
+                assetLibraryLabel={assetLibraryLabel}
+                settingsLabel={settingsLabel}
+                refreshTitle={refreshTitle}
+              />
+            </motion.div>
+          </div>
+        </div>
+      </div>
     </>
   )
 }

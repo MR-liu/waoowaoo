@@ -136,6 +136,13 @@ export const ERROR_CATALOG = {
     userMessageKey: 'errors.WORKER_EXECUTION_ERROR',
     defaultMessage: 'Worker execution failed',
   },
+  NOT_IMPLEMENTED: {
+    httpStatus: 501,
+    retryable: false,
+    category: ERROR_CATEGORY.SYSTEM,
+    userMessageKey: 'errors.NOT_IMPLEMENTED',
+    defaultMessage: 'Feature not yet implemented',
+  },
   INTERNAL_ERROR: {
     httpStatus: 500,
     retryable: false,

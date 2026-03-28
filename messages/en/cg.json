@@ -1,0 +1,53 @@
+{
+  "tabs": {
+    "shots": "Shots",
+    "assets": "Assets",
+    "tasks": "Tasks"
+  },
+  "columns": {
+    "code": "Code",
+    "name": "Name",
+    "status": "Status",
+    "type": "Type",
+    "description": "Description",
+    "sequence": "Sequence",
+    "frameIn": "Frame In",
+    "frameOut": "Frame Out",
+    "duration": "Duration",
+    "assetType": "Asset Type",
+    "pipelineStep": "Pipeline Step",
+    "assignee": "Assignee",
+    "bidDays": "Bid Days",
+    "actualDays": "Actual Days",
+    "startDate": "Start Date",
+    "dueDate": "Due Date",
+    "entity": "Shot / Asset"
+  },
+  "status": {
+    "not_started": "Not Started",
+    "in_progress": "In Progress",
+    "pending_review": "Pending Review",
+    "approved": "Approved",
+    "final": "Final"
+  },
+  "empty": "No data yet",
+  "loading": "Loading…",
+  "dashboard": {
+    "totalShots": "Total Shots",
+    "totalAssets": "Total Assets",
+    "completionRate": "Completion Rate",
+    "overdueTasks": "Overdue Tasks",
+    "burndown": "Burndown Chart",
+    "planned": "Planned",
+    "actual": "Actual",
+    "costSummary": "Cost Summary",
+    "budgetDays": "Budget (days)",
+    "actualDays": "Actual (days)",
+    "utilized": "utilized",
+    "pipelineStatus": "Pipeline Status",
+    "resourceUtilization": "Resource Utilization",
+    "resource": "Resource",
+    "noData": "No data available",
+    "loadError": "Failed to load dashboard"
+  }
+}

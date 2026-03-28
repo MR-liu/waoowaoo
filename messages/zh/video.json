@@ -144,22 +144,50 @@
       "exportStarted": "导出任务已开始，请稍候...",
       "exportFailed": "导出失败"
     },
+    "menu": {
+      "file": "文件",
+      "edit": "编辑"
+    },
     "toolbar": {
-      "back": "← 返回",
-      "saveDirty": "保存 *",
+      "back": "返回",
+      "saveDirty": "保存",
       "saved": "已保存",
-      "export": "导出视频"
+      "export": "导出"
+    },
+    "tabs": {
+      "media": "媒体",
+      "audio": "音频",
+      "text": "文本",
+      "effects": "特效",
+      "transitions": "转场",
+      "filters": "滤镜",
+      "stickers": "贴纸",
+      "comingSoon": "即将上线"
+    },
+    "tools": {
+      "split": "分割",
+      "delete": "删除",
+      "copy": "复制",
+      "undo": "撤销"
     },
     "left": {
       "title": "素材库",
-      "description": "从视频阶段导入的片段将显示在这里"
+      "description": "从视频阶段导入的片段将显示在这里",
+      "clips": "项目片段"
     },
     "right": {
       "title": "属性",
-      "clipLabel": "片段:",
+      "clipLabel": "片段",
       "clipFallback": "片段 {index}",
-      "durationLabel": "时长:",
-      "transitionLabel": "转场到下一片段",
+      "durationLabel": "时长",
+      "resolution": "分辨率",
+      "audio": "音频",
+      "voiceAttached": "已绑定配音",
+      "subtitle": "字幕",
+      "transitionLabel": "转场效果",
+      "speed": "播放速度",
+      "reverse": "倒放",
+      "freeze": "定格",
       "deleteConfirm": "确定删除此片段？",
       "deleteClip": "删除片段",
       "selectClipHint": "选择一个片段查看属性"
@@ -168,11 +196,17 @@
       "emptyStartEditing": "添加素材开始编辑"
     },
     "timeline": {
-      "zoomLabel": "缩放:",
+      "zoomLabel": "缩放",
       "videoTrack": "视频",
-      "emptyHint": "从素材库拖拽视频片段到这里",
+      "emptyHint": "拖放片段到此处",
       "audioTrack": "配音",
-      "audioBadge": "配"
+      "audioBadge": "配",
+      "subtitleTrack": "字幕",
+      "effectTrack": "特效",
+      "bgmTrack": "BGM",
+      "speedBadge": "{speed}x",
+      "frozenBadge": "定格",
+      "reversedBadge": "倒放"
     },
     "transition": {
       "title": "转场效果",

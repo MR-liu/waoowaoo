@@ -75,6 +75,15 @@ export const queryKeys = {
         data: (projectId: string) => ['project', projectId, 'data'] as const,
     },
 
+    // ============ CG 制作管理 ============
+    cg: {
+        shots: (projectId: string) => ['cg', projectId, 'shots'] as const,
+        assets: (projectId: string) => ['cg', projectId, 'assets'] as const,
+        productionTasks: (projectId: string) => ['cg', projectId, 'production-tasks'] as const,
+        dashboard: (projectId: string) => ['cg', projectId, 'dashboard'] as const,
+        search: (projectId: string, query: string) => ['cg', projectId, 'search', query] as const,
+    },
+
     // ============ 顶层便捷函数 ============
     /**
      * 项目基础数据

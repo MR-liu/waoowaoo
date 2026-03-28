@@ -406,6 +406,7 @@ export const API_ERROR_CODES = {
   CONFLICT: { status: getErrorSpec('CONFLICT').httpStatus },
   INTERNAL_ERROR: { status: getErrorSpec('INTERNAL_ERROR').httpStatus },
   NETWORK_ERROR: { status: getErrorSpec('NETWORK_ERROR').httpStatus },
+  NOT_IMPLEMENTED: { status: getErrorSpec('NOT_IMPLEMENTED').httpStatus },
 } as const
 
 export type ApiErrorCode = UnifiedErrorCode

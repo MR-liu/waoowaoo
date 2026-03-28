@@ -11,11 +11,12 @@ import { useProjectData, useEpisodeData } from '@/lib/query/hooks'
 import { queryKeys } from '@/lib/query/keys'
 import NovelPromotionWorkspace from './modes/novel-promotion/NovelPromotionWorkspace'
 import SmartImportWizard, { SplitEpisode } from './modes/novel-promotion/components/SmartImportWizard'
+import CgWorkspaceEntry from './modes/cg/CgWorkspace'
 import { resolveTaskPresentationState } from '@/lib/task/presentation'
 import { resolveSelectedEpisodeId } from './episode-selection'
 
 // 有效的stage值
-const VALID_STAGES = ['config', 'script', 'assets', 'text-storyboard', 'storyboard', 'videos', 'voice', 'editor'] as const
+const VALID_STAGES = ['config', 'script', 'assets', 'storyboard', 'videos', 'voice', 'editor', 'kanban', 'dashboard'] as const
 type Stage = typeof VALID_STAGES[number]
 
 interface Episode {
@@ -85,10 +86,7 @@ export default function ProjectDetailPage() {
     updateUrlParams({ stage })
   }, [updateUrlParams])
 
-  // Stage 状态完全由 URL 控制，不再从数据库同步
-  // 如果 URL 没有 stage 参数，默认使用 'config'
-  // 🚧 剪辑阶段 (editor) 暂时禁用，自动重定向到成片阶段 (videos)
-  const effectiveStage = currentUrlStage === 'editor' ? 'videos' : (currentUrlStage || 'config')
+  const effectiveStage = currentUrlStage || 'config'
 
   // 获取剧集列表
   const novelPromotionData = project?.novelPromotionData as NovelPromotionData | undefined
@@ -236,12 +234,11 @@ export default function ProjectDetailPage() {
     updateUrlParams({ episode: episodeId })
   }
 
-  // Loading状态：等待项目数据和剧集数据都准备好
-  // 条件：正在加载 或 (有剧集但episode数据未准备好)
-  // 排除：如果要显示导入向导，则不需要等待剧集数据
+  const isCgProject = project?.projectType === 'cg'
+
   const isInitializing = loading ||
-    (!shouldShowImportWizard && !isGlobalAssetsView && episodes.length > 0 && (!selectedEpisodeId || !currentEpisode)) ||
-    (project && !project.novelPromotionData)
+    (!isCgProject && !shouldShowImportWizard && !isGlobalAssetsView && episodes.length > 0 && (!selectedEpisodeId || !currentEpisode)) ||
+    (!isCgProject && project && !project.novelPromotionData)
   const initLoadingState = resolveTaskPresentationState({
     phase: 'processing',
     intent: 'generate',
@@ -260,7 +257,6 @@ export default function ProjectDetailPage() {
     )
   }
 
-  // Error状态
   if (error || !project) {
     return (
       <div className="glass-page glass-atmosphere min-h-screen">
@@ -280,62 +276,58 @@ export default function ProjectDetailPage() {
     )
   }
 
+  const mainContent = isCgProject ? (
+    <CgWorkspaceEntry projectId={projectId} />
+  ) : isGlobalAssetsView && project.novelPromotionData ? (
+    <div>
+      <h1 className="text-2xl font-bold text-[var(--glass-text-primary)] mb-6">{t('globalAssets')}</h1>
+      <NovelPromotionWorkspace
+        project={project}
+        projectId={projectId}
+        viewMode="global-assets"
+        urlStage={effectiveStage}
+        onStageChange={updateUrlStage}
+      />
+    </div>
+  ) : shouldShowImportWizard && !isGlobalAssetsView ? (
+    <SmartImportWizard
+      projectId={projectId}
+      onManualCreate={() => handleCreateEpisode(`${t('episode')} 1`)}
+      onImportComplete={handleSmartImportComplete}
+      importStatus={importStatus}
+    />
+  ) : selectedEpisodeId && currentEpisode ? (
+    <NovelPromotionWorkspace
+      project={project}
+      projectId={projectId}
+      episodeId={selectedEpisodeId}
+      episode={currentEpisode}
+      viewMode="episode"
+      urlStage={effectiveStage}
+      onStageChange={updateUrlStage}
+      episodes={episodes}
+      onEpisodeSelect={handleEpisodeSelect}
+      onEpisodeCreate={() => handleCreateEpisode(`${t('episode')} ${episodes.length + 1}`)}
+      onEpisodeRename={handleRenameEpisode}
+      onEpisodeDelete={handleDeleteEpisode}
+    />
+  ) : (
+    <div className="glass-surface p-8 text-center">
+      <div className="mx-auto mb-4 w-12 h-12 rounded-full flex items-center justify-center bg-[var(--glass-bg-muted)] text-[var(--glass-text-tertiary)]">
+        <TaskStatusInline state={initLoadingState} className="[&>span]:sr-only" />
+      </div>
+      <h2 className="text-xl font-semibold text-[var(--glass-text-secondary)] mb-2">{tc('loading')}</h2>
+    </div>
+  )
+
   return (
     <div className="glass-page glass-atmosphere min-h-screen flex flex-col">
       <Navbar />
-
-      {/* V3 UI: 浮动导航替代了旧的 Sidebar */}
-
-      {/* 主内容区 - 占满全部宽度 */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="glass-shell px-2 sm:px-4 py-8">
-          {isGlobalAssetsView && project.novelPromotionData ? (
-            // 全局资产视图（确保数据准备好）
-            <div>
-              <h1 className="text-2xl font-bold text-[var(--glass-text-primary)] mb-6">{t('globalAssets')}</h1>
-              <NovelPromotionWorkspace
-                project={project}
-                projectId={projectId}
-                viewMode="global-assets"
-                urlStage={effectiveStage}
-                onStageChange={updateUrlStage}
-              />
-            </div>
-          ) : shouldShowImportWizard && !isGlobalAssetsView ? (
-            // 零状态或导入中：显示智能导入向导
-            <SmartImportWizard
-              projectId={projectId}
-              onManualCreate={() => handleCreateEpisode(`${t('episode')} 1`)}
-              onImportComplete={handleSmartImportComplete}
-              importStatus={importStatus}
-            />
-          ) : selectedEpisodeId && currentEpisode ? (
-            // 剧集工作区（确保所有数据都准备好）
-            <NovelPromotionWorkspace
-              project={project}
-              projectId={projectId}
-              episodeId={selectedEpisodeId}
-              episode={currentEpisode}
-              viewMode="episode"
-              urlStage={effectiveStage}
-              onStageChange={updateUrlStage}
-              episodes={episodes}
-              onEpisodeSelect={handleEpisodeSelect}
-              onEpisodeCreate={() => handleCreateEpisode(`${t('episode')} ${episodes.length + 1}`)}
-              onEpisodeRename={handleRenameEpisode}
-              onEpisodeDelete={handleDeleteEpisode}
-            />
-          ) : (
-            // 加载中
-            <div className="glass-surface p-8 text-center">
-              <div className="mx-auto mb-4 w-12 h-12 rounded-full flex items-center justify-center bg-[var(--glass-bg-muted)] text-[var(--glass-text-tertiary)]">
-                <TaskStatusInline state={initLoadingState} className="[&>span]:sr-only" />
-              </div>
-              <h2 className="text-xl font-semibold text-[var(--glass-text-secondary)] mb-2">{tc('loading')}</h2>
-            </div>
-          )}
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-4 py-6">
+          {mainContent}
         </div>
-      </main>
+      </div>
     </div>
   )
 }

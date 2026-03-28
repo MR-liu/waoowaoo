@@ -58,12 +58,12 @@ export async function handleClipsBuildTask(job: Job<TaskJobData>) {
 
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { id: true, mode: true },
+    select: { id: true, projectType: true },
   })
   if (!project) {
     throw new Error('Project not found')
   }
-  if (project.mode !== 'novel-promotion') {
+  if (project.projectType !== 'novel-promotion') {
     throw new Error('Not a novel promotion project')
   }
 

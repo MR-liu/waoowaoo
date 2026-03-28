@@ -59,13 +59,13 @@ export async function handleScriptToStoryboardTask(job: Job<TaskJobData>) {
     select: {
       id: true,
       name: true,
-      mode: true,
+      projectType: true,
     },
   })
   if (!project) {
     throw new Error('Project not found')
   }
-  if (project.mode !== 'novel-promotion') {
+  if (project.projectType !== 'novel-promotion') {
     throw new Error('Not a novel promotion project')
   }
 
